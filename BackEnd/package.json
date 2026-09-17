@@ -1,0 +1,24 @@
+{
+  "name": "containerguard-api",
+  "version": "1.0.0",
+  "description": "ContainerGuard Backend API - Docker Container Security & Monitoring Platform",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "dev": "npx prisma migrate deploy && npx prisma generate && nodemon src/server.js",
+    "start": "npx prisma migrate deploy && node src/server.js",
+    "migrate": "npx prisma migrate dev",
+    "studio": "npx prisma studio"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.9.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.2.1",
+    "morgan": "^1.10.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.10",
+    "prisma": "^6.9.0"
+  }
+}

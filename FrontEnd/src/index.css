@@ -1,0 +1,139 @@
+@import "tailwindcss";
+
+/* ============================================================
+   ContainerGuard — Design Tokens & Global Styles
+   Dark-first DevOps dashboard theme
+   ============================================================ */
+
+@theme {
+  /* Background layers */
+  --color-bg-primary: #0b0d11;
+  --color-bg-secondary: #0f1117;
+  --color-bg-tertiary: #151820;
+  --color-bg-surface: #1a1e2a;
+  --color-bg-elevated: #1e2233;
+  --color-bg-hover: #252a3a;
+
+  /* Sidebar */
+  --color-sidebar-bg: #0a0c10;
+  --color-sidebar-hover: #151820;
+  --color-sidebar-active: #1a2332;
+
+  /* Borders */
+  --color-border-primary: #1e2233;
+  --color-border-secondary: #2a2f42;
+  --color-border-accent: #3a4058;
+
+  /* Text */
+  --color-text-primary: #e4e7ed;
+  --color-text-secondary: #8b92a5;
+  --color-text-tertiary: #5a6178;
+  --color-text-muted: #444b5f;
+
+  /* Brand / Accent */
+  --color-accent-primary: #00d4aa;
+  --color-accent-secondary: #00b893;
+  --color-accent-glow: #00d4aa33;
+
+  /* Status */
+  --color-status-running: #00d4aa;
+  --color-status-stopped: #6b7280;
+  --color-status-error: #ef4444;
+  --color-status-warning: #f59e0b;
+
+  /* Severity */
+  --color-severity-critical: #ef4444;
+  --color-severity-high: #f97316;
+  --color-severity-medium: #eab308;
+  --color-severity-low: #6b7280;
+
+  /* Charts */
+  --color-chart-cyan: #00d4aa;
+  --color-chart-blue: #3b82f6;
+  --color-chart-purple: #8b5cf6;
+  --color-chart-orange: #f97316;
+
+  /* Font families */
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+/* ============================================================
+   Base
+   ============================================================ */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #2a2f42 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #2a2f42;
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a4058;
+}
+
+html {
+  font-size: 14px;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-bg-primary);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ============================================================
+   Utility classes
+   ============================================================ */
+.font-mono {
+  font-family: var(--font-mono);
+}
+
+.glow-accent {
+  box-shadow: 0 0 20px var(--color-accent-glow);
+}
+
+/* Animated pulse for live indicators */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* Subtle fade-in for page transitions */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out;
+}
+
+/* Progress bar fill animation */
+@keyframes fill-bar {
+  from { width: 0; }
+}
+
+.animate-fill-bar {
+  animation: fill-bar 0.8s ease-out;
+}
