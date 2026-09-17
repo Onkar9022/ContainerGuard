@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: compose-containerguard-postgres
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-containerguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-containerguard}
+
+    volumes:
+      - containerguard-postgres-data:/var/lib/postgresql/data
+
+    ports:
+      # Host 5433 → Container 5432
+      # Used only for local database tools such as pgAdmin/DBeaver.
+      - "5433:5432"
+
+    networks:
+      - containerguard-network
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-containerguard} -d ${POSTGRES_DB:-containerguard}"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./BackEnd
+      dockerfile: Dockerfile
+
+    container_name: compose-containerguard-backend
+
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-containerguard}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-containerguard}
+      PORT: 5000
+      NODE_ENV: production
+
+    ports:
+      # Host 5000 → Container 5000
+      - "5000:5000"
+
+    networks:
+      - containerguard-network
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./FrontEnd
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:5000}
+
+    container_name: compose-containerguard-frontend
+
+    ports:
+      # Host 5173 → Nginx 80
+      - "5173:80"
+
+    networks:
+      - containerguard-network
+
+    depends_on:
+      - backend
+
+networks:
+  containerguard-network:
+    name: containerguard-network
+
+volumes:
+  containerguard-postgres-data:
+    external: true

@@ -9,8 +9,12 @@ const app = express();
 // ---------------------------------------------------------------------------
 // Middleware
 // ---------------------------------------------------------------------------
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((url) => url.trim())
+  : ['http://localhost:5173', 'http://3.110.108.85'];
+
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  origin: allowedOrigins,
   credentials: true,
 }));
 

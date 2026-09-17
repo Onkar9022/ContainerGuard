@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Environment files (contain credentials)
+.env
+.env.local
+.env.docker
+
+# Explicitly allow example env files (no real credentials)
+!.env.example
+!.env.docker.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Prisma generated client (regenerated on install)
+# node_modules/.prisma/ is covered by node_modules/ above
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Search, Bell, ChevronDown } from 'lucide-react'
 import api from '../services/api'
-import avatar from '../assets/avatar.png'
+import avatar from '../assets/Avatar.png'
 
 export default function TopBar() {
   const [health, setHealth] = useState(null)

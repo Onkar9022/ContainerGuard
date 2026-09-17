@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Environment files (contain configuration/credentials)
+.env
+.env.*
+!.env.example
+
+# Build output
+dist/
+dist-ssr/
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+.git

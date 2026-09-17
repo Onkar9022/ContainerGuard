@@ -1,0 +1,41 @@
+# ============================================================
+# ContainerGuard — Root .gitignore
+# ============================================================
+
+# Dependencies
+node_modules/
+
+# Environment files (contain credentials)
+.env
+.env.local
+.env.docker
+
+# Explicitly allow example env files (no real credentials)
+!.env.example
+!.env.docker.example
+
+# Build output
+dist/
+build/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor directories
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+github-actions-trust-policy.json
+github-actions-permissions-policy.json
