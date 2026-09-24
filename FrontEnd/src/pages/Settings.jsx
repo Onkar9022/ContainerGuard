@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
-import { Settings as SettingsIcon, Database, Server, Shield, Bell, Clock } from 'lucide-react'
+import { Settings as SettingsIcon, Database, Server, Shield, Bell, Clock, Container } from 'lucide-react'
 import api from '../services/api'
 
 export default function Settings() {
   const [health, setHealth] = useState(null)
+  const [dockerInfo, setDockerInfo] = useState(null)
+  const [dockerConnected, setDockerConnected] = useState(false)
 
   useEffect(() => {
     const fetch = async () => {
@@ -14,7 +16,18 @@ export default function Settings() {
         setHealth(null)
       }
     }
+    const fetchDocker = async () => {
+      try {
+        const res = await api.get('/api/docker/info')
+        setDockerInfo(res.data)
+        setDockerConnected(true)
+      } catch {
+        setDockerInfo(null)
+        setDockerConnected(false)
+      }
+    }
     fetch()
+    fetchDocker()
   }, [])
 
   const sections = [
@@ -37,6 +50,18 @@ export default function Settings() {
         { label: 'Provider', value: 'PostgreSQL (NeonDB)' },
         { label: 'Status', value: health?.database === 'connected' ? '✅ Connected' : '❌ Disconnected' },
         { label: 'ORM', value: 'Prisma' },
+      ],
+    },
+    {
+      icon: Container,
+      title: 'Docker Engine',
+      description: 'Docker Engine connection via socket',
+      items: [
+        { label: 'Status', value: dockerConnected ? '✅ Connected' : '❌ Disconnected' },
+        { label: 'Docker Version', value: dockerInfo?.dockerVersion || '—' },
+        { label: 'API Version', value: dockerInfo?.apiVersion || '—' },
+        { label: 'Total Containers', value: dockerInfo?.containersTotal ?? '—' },
+        { label: 'Total Images', value: dockerInfo?.imagesTotal ?? '—' },
       ],
     },
     {

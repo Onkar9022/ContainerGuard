@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Container, Shield, AlertTriangle, Server, RefreshCw, Clock, Scan } from 'lucide-react'
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import StatCard from '../components/StatCard'
@@ -32,9 +33,12 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 export default function Overview() {
   const [health, setHealth] = useState(null)
+  const [containers, setContainers] = useState([])
+  const [dockerInfo, setDockerInfo] = useState(null)
+  const navigate = useNavigate()
 
   useEffect(() => {
-    const fetch = async () => {
+    const fetchHealth = async () => {
       try {
         const data = await api.get('/api/health')
         setHealth(data)
@@ -42,8 +46,26 @@ export default function Overview() {
         setHealth(null)
       }
     }
-    fetch()
+    const fetchDocker = async () => {
+      try {
+        const cRes = await api.get('/api/docker/containers')
+        setContainers(cRes.data || [])
+        const iRes = await api.get('/api/docker/info')
+        setDockerInfo(iRes.data || null)
+      } catch {
+        setContainers([])
+        setDockerInfo(null)
+      }
+    }
+    fetchHealth()
+    fetchDocker()
+    const interval = setInterval(() => { fetchHealth(); fetchDocker() }, 15000)
+    return () => clearInterval(interval)
   }, [])
+
+  const running = containers.filter((c) => c.state === 'running').length
+  const stopped = containers.filter((c) => c.state !== 'running').length
+  const total = containers.length
 
   return (
     <div className="space-y-6">
@@ -89,11 +111,11 @@ export default function Overview() {
         <StatCard
           icon={Container}
           label="Workloads"
-          value={<span className="flex items-baseline gap-1">0 <span className="text-sm font-normal text-text-muted">Total</span></span>}
+          value={<span className="flex items-baseline gap-1">{total} <span className="text-sm font-normal text-text-muted">Total</span></span>}
           subValue={
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-[11px] text-accent-primary">● 0 Run</span>
-              <span className="text-[11px] text-text-muted">● 0 Stop</span>
+              <span className="text-[11px] text-accent-primary">● {running} Run</span>
+              <span className="text-[11px] text-text-muted">● {stopped} Stop</span>
             </div>
           }
         />
@@ -116,17 +138,17 @@ export default function Overview() {
         </div>
         <div className="rounded-xl border border-border-primary bg-bg-surface p-4">
           <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-            Host: {health?.status === 'ok' ? 'LOCAL-DEV' : 'OFFLINE'}
+            Host: {dockerInfo ? (dockerInfo.osType || 'CONNECTED') : (health?.status === 'ok' ? 'LOCAL-DEV' : 'OFFLINE')}
           </p>
           <div className="mt-2 space-y-2">
             <div className="flex items-center justify-between text-[12px]">
-              <span className="text-text-secondary">CPU</span>
-              <span className="font-mono text-text-muted">—%</span>
+              <span className="text-text-secondary">CPU Cores</span>
+              <span className="font-mono text-text-primary">{dockerInfo?.cpus ?? '—'}</span>
             </div>
             <ProgressBar value={0} max={100} size="xs" />
             <div className="flex items-center justify-between text-[12px]">
-              <span className="text-text-secondary">RAM</span>
-              <span className="font-mono text-text-muted">—%</span>
+              <span className="text-text-secondary">Memory</span>
+              <span className="font-mono text-text-primary">{dockerInfo?.totalMemory ? `${(dockerInfo.totalMemory / (1024**3)).toFixed(1)} GB` : '—'}</span>
             </div>
             <ProgressBar value={0} max={100} size="xs" />
           </div>
@@ -141,38 +163,55 @@ export default function Overview() {
             <div className="flex items-center gap-3">
               <h2 className="text-[14px] font-semibold text-text-primary">Active Container Fleet</h2>
               <span className="rounded-full bg-accent-primary/15 px-2 py-0.5 text-[11px] font-semibold text-accent-primary">
-                0 tracked
+                {total} tracked
               </span>
             </div>
             <div className="flex items-center gap-1 text-[11px]">
-              <button className="rounded px-2 py-0.5 font-medium text-text-primary bg-bg-hover">All (0)</button>
-              <button className="rounded px-2 py-0.5 font-medium text-text-muted hover:text-text-secondary">Running (0)</button>
-              <button className="rounded px-2 py-0.5 font-medium text-text-muted hover:text-text-secondary">Stopped (0)</button>
+              <button className="rounded px-2 py-0.5 font-medium text-text-primary bg-bg-hover">All ({total})</button>
+              <button className="rounded px-2 py-0.5 font-medium text-text-muted hover:text-text-secondary">Running ({running})</button>
+              <button className="rounded px-2 py-0.5 font-medium text-text-muted hover:text-text-secondary">Stopped ({stopped})</button>
             </div>
           </div>
 
           {/* Table header */}
-          <div className="grid grid-cols-[1fr_80px_1fr_70px_80px_70px_70px] gap-2 px-5 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted border-b border-border-primary">
+          <div className="grid grid-cols-[1fr_80px_1fr_80px] gap-2 px-5 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted border-b border-border-primary">
             <span>Container</span>
             <span>Status</span>
             <span>Image</span>
-            <span>CPU %</span>
-            <span>Memory</span>
-            <span>Net I/O</span>
-            <span>Uptime</span>
+            <span>Ports</span>
           </div>
 
-          {/* Empty state */}
-          <div className="flex flex-col items-center justify-center py-12 text-center">
-            <Container size={32} className="text-text-muted" strokeWidth={1.2} />
-            <p className="mt-3 text-[13px] font-medium text-text-secondary">No containers detected</p>
-            <p className="mt-1 text-[12px] text-text-muted">Docker Engine integration will be added in Phase 4</p>
-          </div>
+          {/* Container rows or empty */}
+          {containers.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-12 text-center">
+              <Container size={32} className="text-text-muted" strokeWidth={1.2} />
+              <p className="mt-3 text-[13px] font-medium text-text-secondary">No containers detected</p>
+              <p className="mt-1 text-[12px] text-text-muted">Start containers to see them here</p>
+            </div>
+          ) : (
+            containers.slice(0, 8).map((c) => (
+              <div
+                key={c.id}
+                onClick={() => navigate(`/containers/${c.id}`)}
+                className="grid grid-cols-[1fr_80px_1fr_80px] gap-2 items-center px-5 py-2 border-b border-border-primary last:border-0 text-[12px] cursor-pointer hover:bg-bg-hover transition"
+              >
+                <div>
+                  <p className="font-medium text-text-primary truncate">{c.names?.[0] || '—'}</p>
+                  <p className="font-mono text-[10px] text-text-muted">{c.id.slice(0, 12)}</p>
+                </div>
+                <StatusBadge status={c.state} />
+                <p className="text-text-secondary truncate">{c.image}</p>
+                <p className="font-mono text-[10px] text-text-muted truncate">
+                  {c.ports?.filter(p => p.PublicPort).map(p => `${p.PublicPort}→${p.PrivatePort}`).join(', ') || '—'}
+                </p>
+              </div>
+            ))
+          )}
 
           {/* Footer */}
           <div className="flex items-center justify-between border-t border-border-primary px-5 py-2.5 text-[11px] text-text-muted">
-            <span>● Virtual Network Bridge: —</span>
-            <span>Displaying 0 of 0 containers</span>
+            <span>● Docker Engine: {dockerInfo ? 'Connected' : '—'}</span>
+            <span>Displaying {Math.min(containers.length, 8)} of {total} containers</span>
           </div>
         </div>
 

@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import morgan from 'morgan';
 import healthRoutes from './routes/healthRoutes.js';
+import dockerRoutes from './routes/dockerRoutes.js';
 import { errorHandler, notFoundHandler } from './middleware/errorMiddleware.js';
 
 const app = express();
@@ -30,6 +31,7 @@ if (process.env.NODE_ENV !== 'test') {
 // Routes
 // ---------------------------------------------------------------------------
 app.use('/api', healthRoutes);
+app.use('/api/docker', dockerRoutes);
 
 // ---------------------------------------------------------------------------
 // Error handling

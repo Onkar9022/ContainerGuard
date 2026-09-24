@@ -40,6 +40,12 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-containerguard}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-containerguard}
       PORT: 5000
       NODE_ENV: production
+      DOCKER_SOCKET: /var/run/docker.sock
+
+    volumes:
+      # Mount the host Docker socket so the backend can read Docker Engine data.
+      # SECURITY: Only the backend container should have this access.
+      - /var/run/docker.sock:/var/run/docker.sock
 
     ports:
       # Host 5000 → Container 5000

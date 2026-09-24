@@ -5,6 +5,7 @@ import avatar from '../assets/Avatar.png'
 
 export default function TopBar() {
   const [health, setHealth] = useState(null)
+  const [dockerConnected, setDockerConnected] = useState(false)
 
   useEffect(() => {
     const checkHealth = async () => {
@@ -15,8 +16,19 @@ export default function TopBar() {
         setHealth(null)
       }
     }
+
+    const checkDocker = async () => {
+      try {
+        const res = await api.get('/api/docker/ping')
+        setDockerConnected(res.success && res.data === true)
+      } catch {
+        setDockerConnected(false)
+      }
+    }
+
     checkHealth()
-    const interval = setInterval(checkHealth, 30000)
+    checkDocker()
+    const interval = setInterval(() => { checkHealth(); checkDocker() }, 30000)
     return () => clearInterval(interval)
   }, [])
 
@@ -53,13 +65,12 @@ export default function TopBar() {
           <ChevronDown size={12} className="text-text-muted" />
         </div>
 
-        {/* Docker Engine status */}
+        {/* Docker Engine status — now live */}
         <div className="flex items-center gap-1.5 rounded-full border border-border-secondary bg-bg-tertiary px-3 py-1">
-          <span className="h-2 w-2 rounded-full bg-text-muted" />
+          <span className={`h-2 w-2 rounded-full ${dockerConnected ? 'bg-accent-primary animate-pulse-dot' : 'bg-status-error'}`} />
           <span className="text-[11px] font-medium text-text-secondary">
-            Docker Engine
+            {dockerConnected ? 'Docker Connected' : 'Docker Offline'}
           </span>
-          <span className="text-[11px] text-text-muted">(Phase 4)</span>
         </div>
 
         {/* Database status */}
