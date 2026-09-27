@@ -100,118 +100,75 @@ jobs:
           FRONTEND_IMG="${{ steps.image.outputs.frontend_image }}"
           DEPLOY_SHA="${{ steps.image.outputs.tag }}"
 
+          # 1. Base64-encode the deployment script without line wraps
+          DEPLOY_SCRIPT_B64=$(base64 -w 0 scripts/deploy-ec2.sh)
+
+          # 2. Construct safe, minimal SSM parameters JSON file
+          cat << EOF_JSON > /tmp/ssm-parameters.json
+          {
+            "commands": [
+              "echo '${DEPLOY_SCRIPT_B64}' | base64 -d > /tmp/containerguard-deploy.sh",
+              "chmod +x /tmp/containerguard-deploy.sh",
+              "/tmp/containerguard-deploy.sh '${BACKEND_IMG}' '${FRONTEND_IMG}' '${DEPLOY_SHA}'"
+            ]
+          }
+          EOF_JSON
+
+          # 3. Send command to EC2 via SSM
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "$EC2_INSTANCE_ID" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy ContainerGuard SHA: ${DEPLOY_SHA}" \
-            --parameters "commands=[
-              \"set -e\",
-              \"cd /home/ec2-user/containerguard\",
-              \"echo '--- Preparing deployment configuration ---'\",
-              \"mkdir -p nginx\",
-              \"echo 'Downloading docker-compose.prod.yml from commit ${DEPLOY_SHA}'\",
-              \"curl -fsSL https://raw.githubusercontent.com/Onkar9022/ContainerGuard/${DEPLOY_SHA}/docker-compose.prod.yml -o docker-compose.prod.yml\",
-              \"echo 'Downloading nginx.prod.conf from commit ${DEPLOY_SHA}'\",
-              \"curl -fsSL https://raw.githubusercontent.com/Onkar9022/ContainerGuard/${DEPLOY_SHA}/nginx/nginx.prod.conf -o nginx/nginx.prod.conf\",
-              \"echo '--- Safely preparing production environment variables ---'\",
-              \"touch .env.prod\",
-              \"for VAR in POSTGRES_USER POSTGRES_PASSWORD POSTGRES_DB; do if ! grep -q \\\"^\\${VAR}=\\\" .env.prod 2>/dev/null || [ -z \\\"\\$(grep \\\"^\\${VAR}=\\\" .env.prod | head -n1 | cut -d= -f2-)\\\" ]; then if [ -f .env ] && grep -q \\\"^\\${VAR}=\\\" .env; then sed -i \\\"/^\\${VAR}=/d\\\" .env.prod 2>/dev/null || true; grep -m 1 \\\"^\\${VAR}=\\\" .env >> .env.prod; echo \\\"Bootstrapped \\${VAR} into .env.prod\\\"; else echo \\\"ERROR: Required database configuration \\${VAR} is missing from .env.prod and .env\\\" >&2; exit 1; fi; else echo \\\"Preserving existing \\${VAR} in .env.prod\\\"; fi; done\",
-              \"echo '--- Setting immutable image references ---'\",
-              \"echo 'Deploying SHA: ${DEPLOY_SHA}'\",
-              \"sed -i '/^BACKEND_IMAGE=/d' .env.prod 2>/dev/null || true\",
-              \"sed -i '/^FRONTEND_IMAGE=/d' .env.prod 2>/dev/null || true\",
-              \"echo 'BACKEND_IMAGE=${BACKEND_IMG}' >> .env.prod\",
-              \"echo 'FRONTEND_IMAGE=${FRONTEND_IMG}' >> .env.prod\",
-              \"echo '--- Preserving non-secret production configuration ---'\",
-              \"grep -q '^PROD_HTTP_PORT=' .env.prod || echo 'PROD_HTTP_PORT=8080' >> .env.prod\",
-              \"grep -q '^VITE_API_URL=' .env.prod || echo 'VITE_API_URL=' >> .env.prod\",
-              \"grep -q '^CPU_ALERT_THRESHOLD_PERCENT=' .env.prod || echo 'CPU_ALERT_THRESHOLD_PERCENT=80' >> .env.prod\",
-              \"grep -q '^MEMORY_ALERT_THRESHOLD_PERCENT=' .env.prod || echo 'MEMORY_ALERT_THRESHOLD_PERCENT=80' >> .env.prod\",
-              \"grep -q '^POLICY_ALERT_SCORE_THRESHOLD=' .env.prod || echo 'POLICY_ALERT_SCORE_THRESHOLD=70' >> .env.prod\",
-              \"grep -q '^RESTART_LOOP_THRESHOLD=' .env.prod || echo 'RESTART_LOOP_THRESHOLD=3' >> .env.prod\",
-              \"grep -q '^RESTART_LOOP_WINDOW_SECONDS=' .env.prod || echo 'RESTART_LOOP_WINDOW_SECONDS=300' >> .env.prod\",
-              \"grep -q '^ALERT_EVALUATION_INTERVAL_MS=' .env.prod || echo 'ALERT_EVALUATION_INTERVAL_MS=10000' >> .env.prod\",
-              \"grep -q '^CORS_ORIGIN=' .env.prod || echo 'CORS_ORIGIN=http://localhost:8080,http://localhost,http://localhost:5173' >> .env.prod\",
-              \"echo '--- Inspecting PostgreSQL volume configuration ---'\",
-              \"DETECTED_VOL=''\",
-              \"for OLD_PG in containerguard-postgres compose-containerguard-postgres; do if docker ps -a --format '{{.Names}}' | grep -q \\\"^\\${OLD_PG}\\$\\\"; then VNAME=\\$(docker inspect \\\"\\$OLD_PG\\\" --format '{{range .Mounts}}{{if eq .Destination \\\"/var/lib/postgresql/data\\\"}}{{.Name}}{{end}}{{end}}' 2>/dev/null || true); if [ -n \\\"\\$VNAME\\\" ]; then DETECTED_VOL=\\\"\\$VNAME\\\"; break; fi; fi; done\",
-              \"if [ -z \\\"\\$DETECTED_VOL\\\" ] && docker volume ls -q | grep -q '^containerguard-postgres-data$'; then DETECTED_VOL='containerguard-postgres-data'; fi\",
-              \"if [ -n \\\"\\$DETECTED_VOL\\\" ]; then echo \\\"Using detected existing PostgreSQL volume: \\$DETECTED_VOL\\\"; sed -i '/^POSTGRES_VOLUME_NAME=/d' .env.prod 2>/dev/null || true; echo \\\"POSTGRES_VOLUME_NAME=\\${DETECTED_VOL}\\\" >> .env.prod; elif ! grep -q '^POSTGRES_VOLUME_NAME=' .env.prod 2>/dev/null; then echo 'POSTGRES_VOLUME_NAME=containerguard-prod-postgres-data' >> .env.prod; fi\",
-              \"echo '--- Validating production Compose configuration ---'\",
-              \"docker compose -f docker-compose.prod.yml --env-file .env.prod config --quiet\",
-              \"echo '--- ECR Login ---'\",
-              \"aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 461415799543.dkr.ecr.ap-south-1.amazonaws.com\",
-              \"echo '--- Pulling exact SHA images ---'\",
-              \"docker compose -f docker-compose.prod.yml --env-file .env.prod pull backend frontend\",
-              \"echo '--- Gracefully stopping superseded old containers ---'\",
-              \"for OLD_C in containerguard-backend containerguard-frontend containerguard-postgres compose-containerguard-backend compose-containerguard-frontend compose-containerguard-postgres; do if docker ps -q -f \\\"name=^/\\${OLD_C}\\$\\\" | grep -q .; then echo \\\"Stopping old container: \\${OLD_C}\\\"; docker stop -t 10 \\\"\\${OLD_C}\\\" 2>/dev/null || true; fi; done\",
-              \"echo '--- Starting production services ---'\",
-              \"docker compose -f docker-compose.prod.yml --env-file .env.prod up -d\",
-              \"echo '--- Waiting for production services to become healthy ---'\",
-              \"ALL_HEALTHY=0\",
-              \"for i in \\$(seq 1 30); do UNHEALTHY=0; for SVC in postgres backend frontend nginx; do CID=\\$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps -q \\\"\\$SVC\\\" 2>/dev/null || true); if [ -z \\\"\\$CID\\\" ]; then UNHEALTHY=1; break; fi; HSTATUS=\\$(docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' \\\"\\$CID\\\" 2>/dev/null || echo 'unknown'); if [ \\\"\\$HSTATUS\\\" != 'healthy' ]; then UNHEALTHY=1; break; fi; done; if [ \\\"\\$UNHEALTHY\\\" -eq 0 ]; then echo \\\"All production services healthy on attempt \\${i}!\\\"; ALL_HEALTHY=1; break; fi; sleep 2; done\",
-              \"if [ \\\"\\$ALL_HEALTHY\\\" -ne 1 ]; then echo '❌ Health check timed out after 60 seconds!'; docker compose -f docker-compose.prod.yml --env-file .env.prod ps; echo '--- Postgres Logs ---'; docker logs --tail 30 containerguard-prod-postgres 2>&1 || true; echo '--- Backend Logs ---'; docker logs --tail 40 containerguard-prod-backend 2>&1 || true; echo '--- Frontend Logs ---'; docker logs --tail 20 containerguard-prod-frontend 2>&1 || true; echo '--- Nginx Logs ---'; docker logs --tail 20 containerguard-prod-nginx 2>&1 || true; exit 1; fi\",
-              \"echo '--- Verifying endpoints via Nginx gateway (:8080) ---'\",
-              \"curl -sf http://127.0.0.1:8080/healthz > /dev/null && echo '✅ /healthz OK'\",
-              \"curl -sf http://127.0.0.1:8080/api/health > /dev/null && echo '✅ /api/health OK'\",
-              \"curl -sf http://127.0.0.1:8080/api/docker/ping > /dev/null && echo '✅ /api/docker/ping OK'\",
-              \"curl -sf http://127.0.0.1:8080/api/metrics > /dev/null && echo '✅ /api/metrics OK'\",
-              \"curl -sf http://127.0.0.1:8080/api/security/trivy-status > /dev/null && echo '✅ /api/security/trivy-status OK'\",
-              \"curl -sf http://127.0.0.1:8080/api/security/policies/summary > /dev/null && echo '✅ /api/security/policies/summary OK'\",
-              \"curl -sf http://127.0.0.1:8080/api/alerts/summary > /dev/null && echo '✅ /api/alerts/summary OK'\",
-              \"curl -sf http://127.0.0.1:8080/ | grep -qi '<html' && echo '✅ Frontend root OK'\",
-              \"echo '--- Verifying deployed image SHA ---'\",
-              \"RUNNING_BACKEND=\\$(docker inspect --format='{{.Config.Image}}' containerguard-prod-backend)\",
-              \"RUNNING_FRONTEND=\\$(docker inspect --format='{{.Config.Image}}' containerguard-prod-frontend)\",
-              \"echo \\\"Running backend: \\${RUNNING_BACKEND}\\\"\",
-              \"echo \\\"Running frontend: \\${RUNNING_FRONTEND}\\\"\",
-              \"if [ \\\"\\${RUNNING_BACKEND}\\\" != '${BACKEND_IMG}' ]; then echo '❌ Running backend image does not match expected SHA image!'; exit 1; fi\",
-              \"if [ \\\"\\${RUNNING_FRONTEND}\\\" != '${FRONTEND_IMG}' ]; then echo '❌ Running frontend image does not match expected SHA image!'; exit 1; fi\",
-              \"echo '✅ Both containers running exact SHA images'\",
-              \"echo '--- Cleaning up superseded old containers ---'\",
-              \"for OLD_C in containerguard-backend containerguard-frontend containerguard-postgres compose-containerguard-backend compose-containerguard-frontend compose-containerguard-postgres; do if docker ps -a -q -f \\\"name=^/\\${OLD_C}\\$\\\" | grep -q .; then echo \\\"Removing superseded container: \\${OLD_C}\\\"; docker rm -f \\\"\\${OLD_C}\\\" 2>/dev/null || true; fi; done\",
-              \"echo '--- Pruning dangling images ---'\",
-              \"docker image prune -f\",
-              \"echo '--- Deployment complete and verified ---'\"
-            ]" \
+            --parameters file:///tmp/ssm-parameters.json \
             --query "Command.CommandId" \
             --output text)
 
           echo "SSM Command ID: $COMMAND_ID"
           echo "Deploying SHA: $DEPLOY_SHA"
+          echo "--- Waiting for SSM execution to complete ---"
 
-          # Wait for SSM command execution. If execution finishes in Failed status,
-          # || true prevents the step from aborting so we can print the invocation error output.
-          aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$EC2_INSTANCE_ID" || true
-
-          STATUS=$(aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
-            --instance-id "$EC2_INSTANCE_ID" \
-            --query "Status" \
-            --output text)
-
-          echo "Deployment status: $STATUS"
-
-          if [ "$STATUS" != "Success" ]; then
-            echo "❌ Deployment failed on EC2!"
-            echo "=== SSM Standard Output ==="
-            aws ssm get-command-invocation \
+          # 4. Poll get-command-invocation until terminal status
+          while true; do
+            STATUS=$(aws ssm get-command-invocation \
               --command-id "$COMMAND_ID" \
               --instance-id "$EC2_INSTANCE_ID" \
-              --query "StandardOutputContent" \
-              --output text
-            echo "=== SSM Standard Error ==="
-            aws ssm get-command-invocation \
-              --command-id "$COMMAND_ID" \
-              --instance-id "$EC2_INSTANCE_ID" \
-              --query "StandardErrorContent" \
-              --output text
-            exit 1
-          fi
+              --query "Status" \
+              --output text 2>/dev/null || echo "Pending")
 
-          echo "✅ Deployment succeeded for SHA: $DEPLOY_SHA"
+            echo "Current SSM Status: $STATUS"
+
+            case "$STATUS" in
+              Success)
+                echo "✅ Deployment succeeded on EC2 for SHA: $DEPLOY_SHA"
+                echo "=== SSM Standard Output ==="
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$EC2_INSTANCE_ID" \
+                  --query "StandardOutputContent" \
+                  --output text
+                break
+                ;;
+              Failed|TimedOut|Cancelled)
+                echo "❌ Deployment failed on EC2 with status: $STATUS"
+                echo "=== SSM Standard Output ==="
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$EC2_INSTANCE_ID" \
+                  --query "StandardOutputContent" \
+                  --output text
+                echo "=== SSM Standard Error ==="
+                aws ssm get-command-invocation \
+                  --command-id "$COMMAND_ID" \
+                  --instance-id "$EC2_INSTANCE_ID" \
+                  --query "StandardErrorContent" \
+                  --output text
+                exit 1
+                ;;
+              *)
+                sleep 5
+                ;;
+            esac
+          done
 
       # ---------------------------------------------------------------
       # Verify the deployed application is healthy through Nginx gateway
