@@ -94,20 +94,6 @@ jobs:
 
           echo "✅ Both SHA images verified in ECR"
 
-      # ---------------------------------------------------------------
-      # Deploy to EC2 via SSM
-      #
-      # Strategy:
-      #   1. Authenticate to ECR using the EC2 IAM role
-      #   2. Update ONLY the image variables in .env.prod (preserve secrets)
-      #   3. Pull exact SHA images
-      #   4. Bring up the stack with the new images
-      #   5. Verify all containers are healthy
-      #   6. Prune old images
-      #
-      # IMPORTANT: Database credentials (POSTGRES_USER, POSTGRES_PASSWORD,
-      # POSTGRES_DB) are NEVER overwritten — they remain as-is on EC2.
-      # ---------------------------------------------------------------
       - name: Deploy to EC2 using SSM
         run: |
           BACKEND_IMG="${{ steps.image.outputs.backend_image }}"
@@ -121,6 +107,14 @@ jobs:
             --parameters "commands=[
               \"set -e\",
               \"cd /home/ec2-user/containerguard\",
+              \"echo '--- Preparing deployment configuration ---'\",
+              \"mkdir -p nginx\",
+              \"echo 'Downloading docker-compose.prod.yml from commit ${DEPLOY_SHA}'\",
+              \"curl -fsSL https://raw.githubusercontent.com/Onkar9022/ContainerGuard/${DEPLOY_SHA}/docker-compose.prod.yml -o docker-compose.prod.yml\",
+              \"echo 'Downloading nginx.prod.conf from commit ${DEPLOY_SHA}'\",
+              \"curl -fsSL https://raw.githubusercontent.com/Onkar9022/ContainerGuard/${DEPLOY_SHA}/nginx/nginx.prod.conf -o nginx/nginx.prod.conf\",
+              \"echo '--- Validating production Compose configuration ---'\",
+              \"docker compose -f docker-compose.prod.yml --env-file .env.prod config --quiet\",
               \"echo '--- ECR Login ---'\",
               \"aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 461415799543.dkr.ecr.ap-south-1.amazonaws.com\",
               \"echo '--- Setting immutable image references ---'\",
