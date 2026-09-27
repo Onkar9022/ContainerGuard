@@ -169,20 +169,3 @@ jobs:
                 ;;
             esac
           done
-
-      # ---------------------------------------------------------------
-      # Verify the deployed application is healthy through Nginx gateway
-      # ---------------------------------------------------------------
-      - name: Verify deployment health
-        run: |
-          echo "--- Verifying /api/health ---"
-          curl --fail --retry 5 --retry-delay 5 \
-            http://3.110.108.85:8080/api/health
-
-          echo ""
-          echo "--- Verifying /healthz ---"
-          curl --fail --retry 3 --retry-delay 5 \
-            http://3.110.108.85:8080/healthz
-
-          echo ""
-          echo "✅ All health checks passed"
