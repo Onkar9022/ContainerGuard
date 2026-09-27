@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Container, RefreshCw, Trash2, Plus, RotateCcw, Pause, Square, AlertCircle } from 'lucide-react'
+import { Container, RefreshCw, AlertCircle } from 'lucide-react'
 import StatusBadge from '../components/StatusBadge'
 import SearchInput from '../components/SearchInput'
 import EmptyState from '../components/EmptyState'
@@ -83,7 +83,7 @@ export default function Containers() {
             </span>
           </div>
           <p className="mt-1 text-[13px] text-text-secondary">
-            Monitor and manage Docker containers running on your infrastructure.
+            Monitor and inspect Docker containers running on your infrastructure.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -93,14 +93,6 @@ export default function Containers() {
           >
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
             Refresh
-          </button>
-          <button className="flex items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-surface px-3 py-1.5 text-[12px] font-medium text-text-secondary transition hover:text-text-primary">
-            <Trash2 size={13} />
-            Prune Stopped
-          </button>
-          <button className="flex items-center gap-1.5 rounded-lg border border-accent-primary/50 bg-accent-primary/10 px-3 py-1.5 text-[12px] font-semibold text-accent-primary transition hover:bg-accent-primary/20">
-            <Plus size={13} />
-            Create / Run Container
           </button>
         </div>
       </div>
@@ -149,26 +141,10 @@ export default function Containers() {
         </div>
       </div>
 
-      {/* Bulk actions bar */}
-      <div className="flex items-center gap-2 rounded-lg border border-border-primary bg-bg-surface px-4 py-2 text-[12px]">
-        <span className="text-accent-primary font-medium">● {total} containers detected</span>
-        <span className="mx-2 text-text-muted">|</span>
-        <button className="flex items-center gap-1 text-text-secondary hover:text-text-primary transition">
-          <RotateCcw size={12} /> Restart
-        </button>
-        <button className="flex items-center gap-1 text-text-secondary hover:text-text-primary transition">
-          <Pause size={12} /> Pause
-        </button>
-        <button className="flex items-center gap-1 text-text-secondary hover:text-status-error transition">
-          <Square size={12} /> Terminate
-        </button>
-      </div>
-
       {/* Container table */}
       <div className="rounded-xl border border-border-primary bg-bg-surface overflow-hidden">
         {/* Table header */}
-        <div className="grid grid-cols-[24px_1fr_100px_1fr_120px_120px] gap-3 items-center px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-text-muted border-b border-border-primary">
-          <span><input type="checkbox" className="accent-accent-primary" /></span>
+        <div className="grid grid-cols-[1fr_100px_1fr_120px_120px] gap-3 items-center px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-text-muted border-b border-border-primary">
           <span>Container & ID</span>
           <span>Status</span>
           <span>Image</span>
@@ -201,11 +177,8 @@ export default function Containers() {
           <div
             key={c.id}
             onClick={() => navigate(`/containers/${c.id}`)}
-            className="grid grid-cols-[24px_1fr_100px_1fr_120px_120px] gap-3 items-center px-5 py-3 border-b border-border-primary last:border-b-0 text-[12px] cursor-pointer transition hover:bg-bg-hover"
+            className="grid grid-cols-[1fr_100px_1fr_120px_120px] gap-3 items-center px-5 py-3 border-b border-border-primary last:border-b-0 text-[12px] cursor-pointer transition hover:bg-bg-hover"
           >
-            <span>
-              <input type="checkbox" className="accent-accent-primary" onClick={(e) => e.stopPropagation()} />
-            </span>
             <div>
               <p className="font-medium text-text-primary truncate">{c.names?.[0] || '—'}</p>
               <p className="font-mono text-[10px] text-text-muted truncate">{c.id.slice(0, 12)}</p>
@@ -219,63 +192,8 @@ export default function Containers() {
 
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-border-primary px-5 py-2.5 text-[11px] text-text-muted">
-          <span className="font-mono">Pro-tip: containerguard exec -it {'<id>'} sh</span>
-          <div className="flex items-center gap-3">
-            <span>Showing {filtered.length} of {total} containers</span>
-            <span className="text-text-muted">Rows: 10</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Bottom stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-4">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-[12px] font-medium text-text-secondary">Container States</p>
-            <span className="text-[11px] text-accent-primary">{total} Total</span>
-          </div>
-          <div className="flex items-center gap-3 mt-2">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-border-secondary">
-              <span className="text-[14px] font-bold text-accent-primary font-mono">{running}</span>
-            </div>
-            <div>
-              <p className="text-[12px] text-text-secondary">Running: {running}</p>
-              <p className="text-[11px] text-text-muted">Stopped: {stopped}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-4">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-[12px] font-medium text-text-secondary">Compute Utilization</p>
-            <span className="text-[11px] text-accent-primary">Normal Threshold</span>
-          </div>
-          <div className="flex items-center gap-3 mt-2">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full border-2 border-border-secondary">
-              <span className="text-[14px] font-bold text-text-muted font-mono">—%</span>
-            </div>
-            <div>
-              <p className="text-[12px] text-text-secondary">Core Load: — / — VCPU</p>
-              <p className="text-[11px] text-text-muted">Load Avg: —</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-4">
-          <div className="flex items-center justify-between mb-1">
-            <p className="text-[12px] font-medium text-text-secondary">Orchestration Health</p>
-            <span className="text-[11px] text-accent-primary">—% Uptime</span>
-          </div>
-          <div className="mt-2">
-            <p className="flex items-center gap-2 text-[12px] text-text-secondary">
-              <span className={`h-2 w-2 rounded-full ${error ? 'bg-status-error' : 'bg-accent-primary'}`} />
-              Docker Engine {error ? 'Offline' : 'Connected'}
-            </p>
-            <p className="text-[11px] text-text-muted mt-1">Containers: {total}</p>
-            <button className="mt-2 text-[11px] font-medium text-text-secondary hover:text-accent-primary transition">
-              Diagnostics →
-            </button>
-          </div>
+          <span>Showing {filtered.length} of {total} containers</span>
+          <span>Docker Engine: Connected</span>
         </div>
       </div>
     </div>

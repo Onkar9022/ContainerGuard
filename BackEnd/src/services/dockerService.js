@@ -18,6 +18,10 @@ const socketPath = process.env.DOCKER_SOCKET || '/var/run/docker.sock';
 
 const docker = new Docker({ socketPath });
 
+export function getDockerClient() {
+  return docker;
+}
+
 // ---------------------------------------------------------------------------
 // Engine Info
 // ---------------------------------------------------------------------------
@@ -44,6 +48,20 @@ export async function getDockerInfo() {
     kernelVersion: info.KernelVersion,
     runtimes: info.Runtimes ? Object.keys(info.Runtimes) : [],
   };
+}
+
+// ---------------------------------------------------------------------------
+// Security Helper — Mask sensitive container environment variables
+// ---------------------------------------------------------------------------
+function maskSensitiveEnv(envStr) {
+  if (!envStr || typeof envStr !== 'string') return envStr;
+  const eqIdx = envStr.indexOf('=');
+  if (eqIdx === -1) return envStr;
+  const key = envStr.slice(0, eqIdx);
+  if (/password|secret|token|key|credential|private|auth|database_url|db_url|connection/i.test(key)) {
+    return `${key}=********`;
+  }
+  return envStr;
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +107,7 @@ export async function inspectContainer(id) {
     },
     config: {
       hostname: data.Config?.Hostname,
-      env: data.Config?.Env || [],
+      env: (data.Config?.Env || []).map(maskSensitiveEnv),
       cmd: data.Config?.Cmd || [],
       entrypoint: data.Config?.Entrypoint || [],
       workingDir: data.Config?.WorkingDir,
@@ -116,6 +134,72 @@ export async function inspectContainer(id) {
       memory: data.HostConfig?.Memory,
       cpuShares: data.HostConfig?.CpuShares,
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Metrics & Stats
+// ---------------------------------------------------------------------------
+
+export async function getContainerStats(id) {
+  const container = docker.getContainer(id);
+  // one-shot stats request
+  const stats = await container.stats({ stream: false });
+
+  // 1. CPU Calculation
+  const cpuDelta = stats.cpu_stats?.cpu_usage?.total_usage - stats.precpu_stats?.cpu_usage?.total_usage || 0;
+  const systemDelta = stats.cpu_stats?.system_cpu_usage - stats.precpu_stats?.system_cpu_usage || 0;
+  
+  let onlineCpus = stats.cpu_stats?.online_cpus || (stats.cpu_stats?.cpu_usage?.percpu_usage?.length) || 1;
+  if (onlineCpus === 0) onlineCpus = 1;
+
+  let cpuPercent = 0.0;
+  if (systemDelta > 0 && cpuDelta > 0) {
+    cpuPercent = (cpuDelta / systemDelta) * onlineCpus * 100.0;
+  }
+
+  // 2. Memory Calculation
+  const memUsage = stats.memory_stats?.usage || 0;
+  const memLimit = stats.memory_stats?.limit || 0;
+  const cache = stats.memory_stats?.stats?.cache || stats.memory_stats?.stats?.inactive_file || 0;
+  const actualMemUsage = Math.max(0, memUsage - cache);
+
+  let memPercent = 0.0;
+  if (memLimit > 0) {
+    memPercent = (actualMemUsage / memLimit) * 100.0;
+  }
+
+  // 3. Network Aggregation
+  let networkRxBytes = 0;
+  let networkTxBytes = 0;
+  if (stats.networks) {
+    for (const iface of Object.values(stats.networks)) {
+      networkRxBytes += iface.rx_bytes || 0;
+      networkTxBytes += iface.tx_bytes || 0;
+    }
+  }
+
+  // 4. Block I/O Aggregation
+  let blockReadBytes = 0;
+  let blockWriteBytes = 0;
+  if (stats.blkio_stats && stats.blkio_stats.io_service_bytes_recursive) {
+    for (const io of stats.blkio_stats.io_service_bytes_recursive) {
+      if (io.op.toLowerCase() === 'read') blockReadBytes += io.value;
+      if (io.op.toLowerCase() === 'write' || io.op.toLowerCase() === 'sync') blockWriteBytes += io.value;
+    }
+  }
+
+  return {
+    containerId: id,
+    timestamp: stats.read,
+    cpuPercent: Math.round(cpuPercent * 100) / 100,
+    memoryUsage: actualMemUsage,
+    memoryLimit: memLimit,
+    memoryPercent: Math.round(memPercent * 100) / 100,
+    networkRxBytes,
+    networkTxBytes,
+    blockReadBytes,
+    blockWriteBytes
   };
 }
 

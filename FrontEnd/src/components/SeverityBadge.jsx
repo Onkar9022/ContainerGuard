@@ -3,6 +3,7 @@ const severityConfig = {
   high:     { bg: 'bg-severity-high', text: 'text-white' },
   medium:   { bg: 'bg-severity-medium', text: 'text-black' },
   low:      { bg: 'bg-severity-low', text: 'text-white' },
+  unknown:  { bg: 'bg-bg-tertiary', text: 'text-text-secondary' },
 }
 
 export default function SeverityBadge({ severity, count }) {

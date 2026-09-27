@@ -7,21 +7,38 @@ node_modules/
 
 # Environment files (contain credentials)
 .env
+.env.*
 .env.local
 .env.docker
+.env.prod
 
 # Explicitly allow example env files (no real credentials)
 !.env.example
 !.env.docker.example
+!.env.prod.example
+
+# Certificates & Private Keys
+*.pem
+*.key
+*.crt
+*.cert
+*.pfx
+*.p12
+credentials
+credentials.json
+secret*
 
 # Build output
 dist/
+dist-ssr/
 build/
 
 # Logs
 logs/
 *.log
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
 # OS files
 .DS_Store
@@ -37,5 +54,6 @@ Thumbs.db
 *.sln
 *.sw?
 
+# AWS / GitHub Actions Policy files
 github-actions-trust-policy.json
 github-actions-permissions-policy.json

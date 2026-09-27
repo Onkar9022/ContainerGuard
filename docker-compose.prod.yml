@@ -1,0 +1,162 @@
+services:
+  # ===========================================================================
+  # 1. PostgreSQL Database Service (Production)
+  # ===========================================================================
+  postgres:
+    image: postgres:16
+    container_name: containerguard-prod-postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-containerguard}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+      POSTGRES_DB: ${POSTGRES_DB:-containerguard}
+
+    volumes:
+      # Isolated named production volume — preserves data across container restarts
+      - containerguard-prod-postgres-data:/var/lib/postgresql/data
+
+    # SECURITY: PostgreSQL is NOT exposed to the host or public internet
+    # Accessible internally only via containerguard-prod-network as postgres:5432
+    networks:
+      - containerguard-prod-network
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-containerguard} -d ${POSTGRES_DB:-containerguard}"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================================================
+  # 2. ContainerGuard Backend Service (Production)
+  # ===========================================================================
+  backend:
+    # ECR deployment: set BACKEND_IMAGE=<ecr-registry>/containerguard-backend:<sha>
+    # Local build:    leave BACKEND_IMAGE unset (uses build context)
+    image: ${BACKEND_IMAGE:-containerguard-prod-backend:latest}
+    build:
+      context: ./BackEnd
+      dockerfile: Dockerfile
+    container_name: containerguard-prod-backend
+    restart: unless-stopped
+
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-containerguard}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-containerguard}
+      DOCKER_SOCKET: /var/run/docker.sock
+      CPU_ALERT_THRESHOLD_PERCENT: ${CPU_ALERT_THRESHOLD_PERCENT:-80}
+      MEMORY_ALERT_THRESHOLD_PERCENT: ${MEMORY_ALERT_THRESHOLD_PERCENT:-80}
+      POLICY_ALERT_SCORE_THRESHOLD: ${POLICY_ALERT_SCORE_THRESHOLD:-70}
+      RESTART_LOOP_THRESHOLD: ${RESTART_LOOP_THRESHOLD:-3}
+      RESTART_LOOP_WINDOW_SECONDS: ${RESTART_LOOP_WINDOW_SECONDS:-300}
+      ALERT_EVALUATION_INTERVAL_MS: ${ALERT_EVALUATION_INTERVAL_MS:-10000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080,http://localhost,http://localhost:5173}
+
+    volumes:
+      # Mount host Docker socket so backend can inspect Docker Engine
+      # SECURITY: Access is granted ONLY to the backend container
+      - /var/run/docker.sock:/var/run/docker.sock
+
+    # SECURITY: Backend is NOT directly mapped to the host in production
+    # It communicates internally with other production services
+    expose:
+      - "5000"
+
+    networks:
+      - containerguard-prod-network
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ===========================================================================
+  # 3. ContainerGuard Frontend Service (Production SPA)
+  # ===========================================================================
+  frontend:
+    # ECR deployment: set FRONTEND_IMAGE=<ecr-registry>/containerguard-frontend:<sha>
+    # Local build:    leave FRONTEND_IMAGE unset (uses build context)
+    image: ${FRONTEND_IMAGE:-containerguard-prod-frontend:latest}
+    build:
+      context: ./FrontEnd
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+    container_name: containerguard-prod-frontend
+    restart: unless-stopped
+
+    # SECURITY: Frontend does NOT receive Docker socket access
+    # Exposes port 80 internally within the production network
+    expose:
+      - "80"
+
+    networks:
+      - containerguard-prod-network
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ===========================================================================
+  # 4. Nginx Reverse Proxy / Gateway Service (Phase 16 Unified Entrypoint)
+  # ===========================================================================
+  nginx:
+    image: nginx:alpine
+    container_name: containerguard-prod-nginx
+    restart: unless-stopped
+
+    ports:
+      # Production Gateway entry point on host
+      - "${PROD_HTTP_PORT:-8080}:80"
+
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+
+    networks:
+      - containerguard-prod-network
+
+    depends_on:
+      frontend:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  containerguard-prod-network:
+    name: containerguard-prod-network
+    driver: bridge
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  containerguard-prod-postgres-data:
+    name: containerguard-prod-postgres-data

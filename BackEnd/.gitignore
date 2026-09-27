@@ -1,14 +1,24 @@
+# ============================================================
+# ContainerGuard Backend — .gitignore
+# ============================================================
+
 # Dependencies
 node_modules/
 
 # Environment files (contain credentials)
 .env
+.env.*
 .env.local
 .env.docker
 
 # Explicitly allow example env files (no real credentials)
 !.env.example
 !.env.docker.example
+
+# Certificates & Private Keys
+*.pem
+*.key
+credentials
 
 # Logs
 logs/

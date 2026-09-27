@@ -1,5 +1,31 @@
+# ============================================================
+# ContainerGuard Frontend — .gitignore
+# ============================================================
+
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+.env.local
+.env.production
+.env.development
+
+# Allow example files
+!.env.example
+
+# Certificates & Keys
+*.pem
+*.key
+
+# Build output
+dist/
+dist-ssr/
+build/
+
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,16 +33,12 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
+Thumbs.db
 *.suo
 *.ntvs*
 *.njsproj

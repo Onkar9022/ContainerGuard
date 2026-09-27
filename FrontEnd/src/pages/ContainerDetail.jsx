@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { io } from 'socket.io-client'
 import { useParams, Link } from 'react-router-dom'
-import { ArrowLeft, Play, Square, RotateCcw, Terminal, Copy, Container, RefreshCw, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Copy, RefreshCw, AlertCircle } from 'lucide-react'
 import StatusBadge from '../components/StatusBadge'
-import EmptyState from '../components/EmptyState'
 import api from '../services/api'
 
 export default function ContainerDetail() {
@@ -11,8 +11,17 @@ export default function ContainerDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [activeTab, setActiveTab] = useState('Overview')
+  
+  // Logs state
+  const [logs, setLogs] = useState([])
+  const [logStatus, setLogStatus] = useState('disconnected')
+  const [logError, setLogError] = useState(null)
+  const [isFollowing, setIsFollowing] = useState(true)
+  const socketRef = useRef(null)
+  const logsEndRef = useRef(null)
+  const logsContainerRef = useRef(null)
 
-  const tabs = ['Overview', 'Environment', 'Mounts', 'Networks']
+  const tabs = ['Overview', 'Live Logs', 'Environment', 'Mounts', 'Networks']
 
   useEffect(() => {
     const fetch = async () => {
@@ -28,6 +37,66 @@ export default function ContainerDetail() {
     }
     fetch()
   }, [id])
+
+  // Socket.IO Logs Management
+  useEffect(() => {
+    if (activeTab === 'Live Logs' && !socketRef.current) {
+      // Connect to the backend (via reverse-proxied gateway in prod or direct in dev)
+      const backendUrl = import.meta.env.VITE_API_URL !== undefined
+        ? import.meta.env.VITE_API_URL
+        : (import.meta.env.PROD ? undefined : 'http://localhost:5000')
+      const socket = io(backendUrl || undefined, { transports: ['websocket', 'polling'] })
+      socketRef.current = socket
+
+      socket.on('connect', () => {
+        socket.emit('logs:start', { containerId: id })
+      })
+
+      socket.on('logs:status', ({ status }) => setLogStatus(status))
+      
+      socket.on('logs:error', ({ message }) => {
+        setLogError(message)
+        setLogStatus('error')
+      })
+
+      socket.on('logs:data', (logEntry) => {
+        setLogs(prev => {
+          const updated = [...prev, logEntry]
+          return updated.slice(-1000) // Keep max 1000 lines
+        })
+      })
+    }
+
+    return () => {
+      if (activeTab !== 'Live Logs' && socketRef.current) {
+        // Disconnect when switching away from Live Logs tab
+        socketRef.current.emit('logs:stop')
+        socketRef.current.disconnect()
+        socketRef.current = null
+        setLogStatus('disconnected')
+      }
+    }
+  }, [activeTab, id])
+
+  // Unmount cleanup
+  useEffect(() => {
+    return () => {
+      if (socketRef.current) {
+        socketRef.current.emit('logs:stop')
+        socketRef.current.disconnect()
+      }
+    }
+  }, [])
+
+  // Auto-scrolling
+  useEffect(() => {
+    if (isFollowing && logsEndRef.current && activeTab === 'Live Logs') {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [logs, isFollowing, activeTab])
+
+  const toggleFollow = () => setIsFollowing(!isFollowing)
+  const clearLogs = () => setLogs([])
 
   function formatDate(dateStr) {
     if (!dateStr || dateStr === '0001-01-01T00:00:00Z') return '—'
@@ -95,20 +164,6 @@ export default function ContainerDetail() {
             </button>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-surface px-3 py-1.5 text-[12px] font-medium text-accent-primary hover:bg-accent-primary/10 transition">
-            <Play size={13} /> Start
-          </button>
-          <button className="flex items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-surface px-3 py-1.5 text-[12px] font-medium text-text-secondary hover:text-status-warning transition">
-            <RotateCcw size={13} /> Restart
-          </button>
-          <button className="flex items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-surface px-3 py-1.5 text-[12px] font-medium text-text-secondary hover:text-status-error transition">
-            <Square size={13} /> Stop
-          </button>
-          <button className="flex items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-surface px-3 py-1.5 text-[12px] font-medium text-text-secondary hover:text-text-primary transition">
-            <Terminal size={13} /> Exec
-          </button>
-        </div>
       </div>
 
       {/* Tabs */}
@@ -171,6 +226,69 @@ export default function ContainerDetail() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'Live Logs' && (
+        <div className="rounded-xl border border-border-primary bg-bg-surface overflow-hidden flex flex-col" style={{ height: '600px' }}>
+          {/* Logs Toolbar */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border-primary bg-bg-surface">
+            <div className="flex items-center gap-4 text-[12px]">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full ${
+                  logStatus === 'connected' ? 'bg-status-success' : 
+                  logStatus === 'error' ? 'bg-status-error' : 'bg-status-warning'
+                }`}></span>
+                <span className="text-text-secondary capitalize">{logStatus}</span>
+              </div>
+              {logError && <span className="text-status-error">{logError}</span>}
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={clearLogs}
+                className="px-3 py-1.5 text-[12px] text-text-secondary hover:text-text-primary border border-border-primary rounded-lg transition"
+              >
+                Clear
+              </button>
+              <button 
+                onClick={toggleFollow}
+                className={`px-3 py-1.5 text-[12px] border rounded-lg transition ${
+                  isFollowing 
+                    ? 'text-accent-primary border-accent-primary/50 bg-accent-primary/10' 
+                    : 'text-text-secondary border-border-primary hover:text-text-primary'
+                }`}
+              >
+                {isFollowing ? 'Following' : 'Paused'}
+              </button>
+            </div>
+          </div>
+
+          {/* Logs Terminal Window */}
+          <div 
+            ref={logsContainerRef}
+            className="flex-1 overflow-y-auto bg-[#0A0A0A] p-4 font-mono text-[11px] sm:text-[12px] leading-relaxed"
+            onWheel={() => setIsFollowing(false)} // Pause auto-scroll on manual scroll
+          >
+            {logs.length === 0 ? (
+              <div className="text-text-muted text-center py-10">Waiting for logs...</div>
+            ) : (
+              logs.map((log, index) => (
+                <div key={index} className="flex gap-3 hover:bg-white/5 px-2 py-0.5 rounded break-all">
+                  <span className="text-text-muted shrink-0 select-none">
+                    {new Date(log.timestamp).toISOString().split('T')[1].replace('Z', '')}
+                  </span>
+                  <span className={`shrink-0 select-none ${log.stream === 'stderr' ? 'text-status-error' : 'text-accent-primary/70'}`}>
+                    [{log.stream}]
+                  </span>
+                  <span className={log.stream === 'stderr' ? 'text-status-error/90' : 'text-gray-300'}>
+                    {log.message}
+                  </span>
+                </div>
+              ))
+            )}
+            <div ref={logsEndRef} />
           </div>
         </div>
       )}

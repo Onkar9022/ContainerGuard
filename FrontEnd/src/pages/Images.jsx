@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Box, Scan, RefreshCw, AlertCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Box, RefreshCw, AlertCircle, Shield } from 'lucide-react'
 import SearchInput from '../components/SearchInput'
 import EmptyState from '../components/EmptyState'
 import api from '../services/api'
 
 export default function Images() {
+  const navigate = useNavigate()
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -70,12 +72,6 @@ export default function Images() {
             Docker image inventory, vulnerability status, and supply chain metadata.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button className="flex items-center gap-1.5 rounded-lg border border-accent-primary/50 bg-accent-primary/10 px-3 py-1.5 text-[12px] font-semibold text-accent-primary transition hover:bg-accent-primary/20">
-            <Scan size={13} />
-            Scan All Images
-          </button>
-        </div>
       </div>
 
       {/* Error banner */}
@@ -140,7 +136,19 @@ export default function Images() {
               <span className="font-mono text-[11px] text-text-muted truncate">{img.id.replace('sha256:', '').slice(0, 12)}</span>
               <span className="font-mono text-text-secondary">{formatSize(img.size)}</span>
               <span className="text-text-muted">{formatCreated(img.created)}</span>
-              <span className="text-[11px] text-text-muted">Phase 11</span>
+              <div>
+                <button
+                  onClick={() => {
+                    const targetImage = repo !== '<none>' ? `${repo}:${tag}` : img.id.replace('sha256:', '').slice(0, 12)
+                    navigate('/security', { state: { image: targetImage } })
+                  }}
+                  className="flex items-center gap-1 rounded bg-accent-primary/10 px-2 py-1 text-[11px] font-semibold text-accent-primary hover:bg-accent-primary/20 transition"
+                  title="Scan with Trivy"
+                >
+                  <Shield size={12} />
+                  Scan
+                </button>
+              </div>
             </div>
           )
         })}

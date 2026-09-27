@@ -1,4 +1,6 @@
+import { useState, useEffect } from 'react'
 import { NavLink } from 'react-router-dom'
+import api from '../services/api'
 import {
   LayoutDashboard,
   Container,
@@ -7,11 +9,9 @@ import {
   Box,
   Shield,
   Bell,
-  Rocket,
   Server,
   Network,
   HardDrive,
-  Activity,
   Settings,
 } from 'lucide-react'
 import logo from '../assets/Logo.png'
@@ -23,7 +23,7 @@ const navGroups = [
       { to: '/', icon: LayoutDashboard, label: 'Overview' },
       { to: '/containers', icon: Container, label: 'Containers' },
       { to: '/metrics', icon: BarChart3, label: 'Metrics' },
-      { to: '/logs', icon: ScrollText, label: 'Logs' },
+      { to: '/logs', icon: ScrollText, label: 'Live Logs' },
     ],
   },
   {
@@ -32,7 +32,6 @@ const navGroups = [
       { to: '/images', icon: Box, label: 'Images' },
       { to: '/security', icon: Shield, label: 'Security' },
       { to: '/alerts', icon: Bell, label: 'Alerts' },
-      { to: '/deployments', icon: Rocket, label: 'Deployments' },
     ],
   },
   {
@@ -46,13 +45,34 @@ const navGroups = [
   {
     label: 'MANAGEMENT',
     items: [
-      { to: '/activity', icon: Activity, label: 'Activity' },
       { to: '/settings', icon: Settings, label: 'Settings' },
     ],
   },
 ]
 
 export default function Sidebar() {
+  const [openAlertsCount, setOpenAlertsCount] = useState(0)
+
+  useEffect(() => {
+    let isMounted = true
+    async function fetchAlertCount() {
+      try {
+        const res = await api.get('/api/alerts/summary')
+        if (isMounted && res?.data?.open !== undefined) {
+          setOpenAlertsCount(res.data.open)
+        }
+      } catch {
+        // Silent fail for sidebar badge
+      }
+    }
+    fetchAlertCount()
+    const timer = setInterval(fetchAlertCount, 15000)
+    return () => {
+      isMounted = false
+      clearInterval(timer)
+    }
+  }, [])
+
   return (
     <aside className="flex w-[230px] min-w-[230px] flex-col border-r border-border-primary bg-sidebar-bg">
       {/* Logo */}
@@ -80,15 +100,23 @@ export default function Sidebar() {
                     to={item.to}
                     end={item.to === '/'}
                     className={({ isActive }) =>
-                      `flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-150 ${
+                      `flex items-center justify-between rounded-lg px-3 py-2 text-[13px] font-medium transition-all duration-150 ${
                         isActive
                           ? 'bg-sidebar-active text-accent-primary'
                           : 'text-text-secondary hover:bg-sidebar-hover hover:text-text-primary'
                       }`
                     }
                   >
-                    <item.icon size={16} strokeWidth={1.8} />
-                    {item.label}
+                    <div className="flex items-center gap-2.5">
+                      <item.icon size={16} strokeWidth={1.8} />
+                      <span>{item.label}</span>
+                    </div>
+
+                    {item.to === '/alerts' && openAlertsCount > 0 && (
+                      <span className="rounded-full bg-severity-critical px-1.5 py-0.2 text-[10px] font-bold text-white leading-none">
+                        {openAlertsCount}
+                      </span>
+                    )}
                   </NavLink>
                 </li>
               ))}

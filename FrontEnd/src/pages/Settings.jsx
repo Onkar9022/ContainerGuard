@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react'
-import { Settings as SettingsIcon, Database, Server, Shield, Bell, Clock, Container } from 'lucide-react'
+import { Database, Server, Shield, Bell, Clock, Container } from 'lucide-react'
 import api from '../services/api'
 
 export default function Settings() {
   const [health, setHealth] = useState(null)
   const [dockerInfo, setDockerInfo] = useState(null)
   const [dockerConnected, setDockerConnected] = useState(false)
+  const [trivyStatus, setTrivyStatus] = useState(null)
 
   useEffect(() => {
-    const fetch = async () => {
+    const fetchHealth = async () => {
       try {
         const data = await api.get('/api/health')
         setHealth(data)
@@ -26,20 +27,29 @@ export default function Settings() {
         setDockerConnected(false)
       }
     }
-    fetch()
+    const fetchTrivy = async () => {
+      try {
+        const res = await api.get('/api/security/trivy-status')
+        setTrivyStatus(res.data)
+      } catch {
+        setTrivyStatus(null)
+      }
+    }
+    fetchHealth()
     fetchDocker()
+    fetchTrivy()
   }, [])
 
   const sections = [
     {
       icon: Server,
-      title: 'API Connection',
-      description: 'Backend API server configuration',
+      title: 'API Gateway & Reverse Proxy',
+      description: 'Production gateway entrypoint and backend API configuration',
       items: [
-        { label: 'API URL', value: import.meta.env.VITE_API_URL || 'Not configured' },
+        { label: 'API Base URL', value: import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'Same-origin (/api)' : 'http://localhost:5000') },
         { label: 'Status', value: health?.status === 'ok' ? '✅ Connected' : '❌ Disconnected' },
-        { label: 'Version', value: health?.version || '—' },
-        { label: 'Uptime', value: health?.uptime ? `${health.uptime}s` : '—' },
+        { label: 'Version', value: health?.version || '1.0.0' },
+        { label: 'Service Uptime', value: health?.uptime ? `${health.uptime}s` : '—' },
       ],
     },
     {
@@ -47,17 +57,17 @@ export default function Settings() {
       title: 'Database',
       description: 'PostgreSQL connection via Prisma ORM',
       items: [
-        { label: 'Provider', value: 'PostgreSQL (NeonDB)' },
-        { label: 'Status', value: health?.database === 'connected' ? '✅ Connected' : '❌ Disconnected' },
-        { label: 'ORM', value: 'Prisma' },
+        { label: 'Engine', value: 'PostgreSQL 16' },
+        { label: 'Connection Status', value: health?.database === 'connected' ? '✅ Connected' : '❌ Disconnected' },
+        { label: 'ORM', value: 'Prisma Client' },
       ],
     },
     {
       icon: Container,
       title: 'Docker Engine',
-      description: 'Docker Engine connection via socket',
+      description: 'Docker Engine integration via host socket',
       items: [
-        { label: 'Status', value: dockerConnected ? '✅ Connected' : '❌ Disconnected' },
+        { label: 'Socket Status', value: dockerConnected ? '✅ Connected' : '❌ Disconnected' },
         { label: 'Docker Version', value: dockerInfo?.dockerVersion || '—' },
         { label: 'API Version', value: dockerInfo?.apiVersion || '—' },
         { label: 'Total Containers', value: dockerInfo?.containersTotal ?? '—' },
@@ -67,32 +77,32 @@ export default function Settings() {
     {
       icon: Shield,
       title: 'Security Scanner',
-      description: 'Trivy vulnerability scanning engine',
+      description: 'Trivy vulnerability scanner integration',
       items: [
-        { label: 'Engine', value: 'Trivy' },
-        { label: 'Status', value: '⏳ Not configured (Phase 11)' },
-        { label: 'Last Scan', value: '—' },
+        { label: 'Engine', value: 'Aqua Security Trivy CLI' },
+        { label: 'Status', value: trivyStatus?.installed ? `✅ Installed (${trivyStatus.version || 'active'})` : '❌ Not Available' },
+        { label: 'Scan Mode', value: 'On-Demand Container Image Inspection' },
       ],
     },
     {
       icon: Bell,
-      title: 'Alert Thresholds',
-      description: 'Configurable monitoring thresholds',
+      title: 'Alert System',
+      description: 'Active monitoring rules and notification thresholds',
       items: [
-        { label: 'CPU Threshold', value: '80%' },
-        { label: 'Memory Threshold', value: '80%' },
-        { label: 'Security Score Minimum', value: '70' },
-        { label: 'Status', value: '⏳ Not active (Phase 14)' },
+        { label: 'CPU Alert Threshold', value: '80%' },
+        { label: 'Memory Alert Threshold', value: '80%' },
+        { label: 'Policy Score Minimum', value: '70 / 100' },
+        { label: 'Status', value: '✅ Active (AL001–AL006 rules evaluated every 10s)' },
       ],
     },
     {
       icon: Clock,
-      title: 'Metrics Collection',
-      description: 'Resource monitoring configuration',
+      title: 'Metrics Telemetry',
+      description: 'Continuous resource monitoring and persistence',
       items: [
-        { label: 'Collection Interval', value: '15s' },
-        { label: 'Retention Period', value: '30 days' },
-        { label: 'Status', value: '⏳ Not active (Phase 8)' },
+        { label: 'Collection Frequency', value: 'Every 5s' },
+        { label: 'Persistence Target', value: 'PostgreSQL (container_metrics)' },
+        { label: 'Status', value: '✅ Active (Worker Running)' },
       ],
     },
   ]
@@ -102,7 +112,7 @@ export default function Settings() {
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Settings</h1>
         <p className="mt-1 text-[13px] text-text-secondary">
-          ContainerGuard platform configuration and connection status.
+          ContainerGuard platform configuration, subsystem health, and runtime telemetry.
         </p>
       </div>
 

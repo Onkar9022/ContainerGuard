@@ -3,6 +3,7 @@ import {
   getDockerInfo,
   listContainers,
   inspectContainer,
+  getContainerStats,
   listImages,
   inspectImage,
   listNetworks,
@@ -47,6 +48,9 @@ router.get('/info', dockerRoute(() => getDockerInfo()));
 
 // GET /api/docker/containers — list all containers (running + stopped)
 router.get('/containers', dockerRoute(() => listContainers()));
+
+// GET /api/docker/containers/:id/stats — get container runtime statistics
+router.get('/containers/:id/stats', dockerRoute((req) => getContainerStats(req.params.id)));
 
 // GET /api/docker/containers/:id — inspect a specific container
 router.get('/containers/:id', dockerRoute((req) => inspectContainer(req.params.id)));

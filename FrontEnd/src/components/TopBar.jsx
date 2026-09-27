@@ -1,35 +1,46 @@
 import { useState, useEffect } from 'react'
-import { Search, Bell, ChevronDown } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { Bell } from 'lucide-react'
 import api from '../services/api'
 import avatar from '../assets/Avatar.png'
 
 export default function TopBar() {
   const [health, setHealth] = useState(null)
   const [dockerConnected, setDockerConnected] = useState(false)
+  const [openAlertsCount, setOpenAlertsCount] = useState(0)
+  const navigate = useNavigate()
 
   useEffect(() => {
-    const checkHealth = async () => {
+    let isMounted = true
+
+    const checkStatus = async () => {
       try {
-        const data = await api.get('/api/health')
-        setHealth(data)
+        const [healthRes, dockerRes, alertsRes] = await Promise.allSettled([
+          api.get('/api/health'),
+          api.get('/api/docker/ping'),
+          api.get('/api/alerts/summary'),
+        ])
+
+        if (isMounted) {
+          if (healthRes.status === 'fulfilled') setHealth(healthRes.value)
+          if (dockerRes.status === 'fulfilled') {
+            setDockerConnected(dockerRes.value?.success && dockerRes.value?.data === true)
+          }
+          if (alertsRes.status === 'fulfilled' && alertsRes.value?.data?.open !== undefined) {
+            setOpenAlertsCount(alertsRes.value.data.open)
+          }
+        }
       } catch {
-        setHealth(null)
+        // Silent background polling
       }
     }
 
-    const checkDocker = async () => {
-      try {
-        const res = await api.get('/api/docker/ping')
-        setDockerConnected(res.success && res.data === true)
-      } catch {
-        setDockerConnected(false)
-      }
+    checkStatus()
+    const interval = setInterval(checkStatus, 15000)
+    return () => {
+      isMounted = false
+      clearInterval(interval)
     }
-
-    checkHealth()
-    checkDocker()
-    const interval = setInterval(() => { checkHealth(); checkDocker() }, 30000)
-    return () => clearInterval(interval)
   }, [])
 
   const isHealthy = health?.status === 'ok'
@@ -42,16 +53,6 @@ export default function TopBar() {
         <span className="text-[13px] font-medium text-text-secondary">
           Cluster / <span className="text-text-primary">local-dev</span>
         </span>
-
-        {/* Search */}
-        <div className="relative">
-          <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
-          <input
-            type="text"
-            placeholder="Press ⌘K to search containers, CVEs, images..."
-            className="h-8 w-80 rounded-lg border border-border-primary bg-bg-tertiary pl-8 pr-3 text-[12px] text-text-primary placeholder-text-muted outline-none transition focus:border-accent-primary/50 focus:ring-1 focus:ring-accent-primary/20"
-          />
-        </div>
       </div>
 
       {/* Right side — status + profile */}
@@ -60,12 +61,11 @@ export default function TopBar() {
         <div className="flex items-center gap-1.5 rounded-full border border-border-secondary bg-bg-tertiary px-3 py-1">
           <span className={`h-2 w-2 rounded-full ${isHealthy ? 'bg-accent-primary animate-pulse-dot' : 'bg-status-error'}`} />
           <span className="text-[11px] font-medium text-text-secondary">
-            Development
+            {import.meta.env.PROD ? 'Production' : 'Development'}
           </span>
-          <ChevronDown size={12} className="text-text-muted" />
         </div>
 
-        {/* Docker Engine status — now live */}
+        {/* Docker Engine status */}
         <div className="flex items-center gap-1.5 rounded-full border border-border-secondary bg-bg-tertiary px-3 py-1">
           <span className={`h-2 w-2 rounded-full ${dockerConnected ? 'bg-accent-primary animate-pulse-dot' : 'bg-status-error'}`} />
           <span className="text-[11px] font-medium text-text-secondary">
@@ -81,18 +81,23 @@ export default function TopBar() {
           </span>
         </div>
 
-        {/* Notifications */}
-        <button className="relative rounded-lg p-1.5 text-text-secondary transition hover:bg-bg-hover hover:text-text-primary">
+        {/* Notifications — navigates to Alerts */}
+        <button
+          onClick={() => navigate('/alerts')}
+          title="Open Alert Center"
+          className="relative rounded-lg p-1.5 text-text-secondary transition hover:bg-bg-hover hover:text-text-primary"
+        >
           <Bell size={18} />
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-severity-critical text-[9px] font-bold text-white">
-            3
-          </span>
+          {openAlertsCount > 0 && (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-severity-critical text-[9px] font-bold text-white">
+              {openAlertsCount}
+            </span>
+          )}
         </button>
 
-        {/* Avatar */}
-        <div className="flex items-center gap-2 cursor-pointer">
-          <img src={avatar} alt="User" className="h-8 w-8 rounded-full border border-border-secondary object-cover" />
-          <ChevronDown size={12} className="text-text-muted" />
+        {/* Operator Avatar */}
+        <div className="flex items-center gap-2">
+          <img src={avatar} alt="Operator" className="h-8 w-8 rounded-full border border-border-secondary object-cover" />
         </div>
       </div>
     </header>

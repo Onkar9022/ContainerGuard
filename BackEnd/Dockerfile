@@ -1,5 +1,9 @@
-# Use the official Node.js 20 LTS Alpine image for a lightweight, secure production base
 FROM node:20-alpine
+
+# Install Trivy vulnerability scanner CLI
+RUN apk add --no-cache curl \
+    && curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin \
+    && trivy --version
 
 # Set the working directory inside the container
 WORKDIR /usr/src/app

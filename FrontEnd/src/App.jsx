@@ -8,11 +8,9 @@ import Logs from './pages/Logs'
 import Images from './pages/Images'
 import Security from './pages/Security'
 import Alerts from './pages/Alerts'
-import Deployments from './pages/Deployments'
 import Hosts from './pages/Hosts'
 import Networks from './pages/Networks'
 import Volumes from './pages/Volumes'
-import Activity from './pages/Activity'
 import Settings from './pages/Settings'
 
 function App() {
@@ -27,11 +25,9 @@ function App() {
         <Route path="/images" element={<Images />} />
         <Route path="/security" element={<Security />} />
         <Route path="/alerts" element={<Alerts />} />
-        <Route path="/deployments" element={<Deployments />} />
         <Route path="/hosts" element={<Hosts />} />
         <Route path="/networks" element={<Networks />} />
         <Route path="/volumes" element={<Volumes />} />
-        <Route path="/activity" element={<Activity />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
     </Routes>
