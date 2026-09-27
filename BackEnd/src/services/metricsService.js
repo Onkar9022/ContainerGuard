@@ -1,4 +1,5 @@
 import prisma from '../config/prisma.js';
+import logger from '../utils/logger.js';
 
 /**
  * Persists an array of metric objects in a single batch.
@@ -27,7 +28,7 @@ export async function persistMetricsBatch(metrics) {
     });
   } catch (error) {
     // We log the error but don't throw it, so the worker loop is not interrupted.
-    console.error(`[MetricsService] Failed to persist batch: ${error.message}`);
+    logger.error('Failed to persist metrics batch', { context: 'MetricsService', count: metrics.length, error: error.message });
   }
 }
 

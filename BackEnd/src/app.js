@@ -26,7 +26,34 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // HTTP request logging — skip in test
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV === 'production') {
+  app.use(
+    morgan(
+      (tokens, req, res) => {
+        return JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: 'INFO',
+          service: 'containerguard-backend',
+          message: `HTTP ${tokens.method(req, res)} ${tokens.url(req, res)} ${tokens.status(req, res)} (${tokens['response-time'](req, res)}ms)`,
+          context: {
+            type: 'HTTP_REQUEST',
+            method: tokens.method(req, res),
+            url: tokens.url(req, res),
+            status: Number(tokens.status(req, res)),
+            responseTimeMs: Number(tokens['response-time'](req, res)),
+            contentLength: tokens.res(req, res, 'content-length') || '0',
+            ip: req.ip || req.headers['x-forwarded-for'],
+          },
+        });
+      },
+      {
+        stream: {
+          write: (message) => process.stdout.write(message.trim() + '\n'),
+        },
+      }
+    )
+  );
+} else if (process.env.NODE_ENV !== 'test') {
   app.use(morgan('dev'));
 }
 

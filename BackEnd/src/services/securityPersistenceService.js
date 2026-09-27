@@ -1,4 +1,5 @@
 import prisma from '../config/prisma.js';
+import logger from '../utils/logger.js';
 
 /**
  * Persists a completed vulnerability scan to the database atomically.
@@ -39,7 +40,12 @@ export async function persistScan(image, imageId, normalizedData, status = 'SUCC
       }
     });
   } catch (error) {
-    console.error(`[Security Persistence] Failed to persist scan for ${image}:`, error);
+    logger.error(`Failed to persist scan for image ${image}`, {
+      context: 'SecurityPersistence',
+      image,
+      error: error.message,
+      stack: error.stack
+    });
     throw error;
   }
 }

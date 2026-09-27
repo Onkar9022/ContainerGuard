@@ -1,5 +1,18 @@
 import { useState, useEffect } from 'react'
-import { Database, Server, Shield, Bell, Clock, Container } from 'lucide-react'
+import {
+  Server,
+  Database,
+  Container,
+  Shield,
+  Bell,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  RefreshCw,
+  Cpu,
+  Layers,
+  Terminal,
+} from 'lucide-react'
 import api from '../services/api'
 
 export default function Settings() {
@@ -7,135 +20,187 @@ export default function Settings() {
   const [dockerInfo, setDockerInfo] = useState(null)
   const [dockerConnected, setDockerConnected] = useState(false)
   const [trivyStatus, setTrivyStatus] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  const fetchAllSettings = async () => {
+    try {
+      const [healthRes, dockerRes, trivyRes] = await Promise.allSettled([
+        api.get('/api/health'),
+        api.get('/api/docker/info'),
+        api.get('/api/security/trivy-status'),
+      ])
+
+      if (healthRes.status === 'fulfilled') setHealth(healthRes.value)
+      if (dockerRes.status === 'fulfilled') {
+        setDockerInfo(dockerRes.value?.data || null)
+        setDockerConnected(true)
+      }
+      if (trivyRes.status === 'fulfilled') {
+        setTrivyStatus(trivyRes.value?.data || null)
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const fetchHealth = async () => {
-      try {
-        const data = await api.get('/api/health')
-        setHealth(data)
-      } catch {
-        setHealth(null)
-      }
-    }
-    const fetchDocker = async () => {
-      try {
-        const res = await api.get('/api/docker/info')
-        setDockerInfo(res.data)
-        setDockerConnected(true)
-      } catch {
-        setDockerInfo(null)
-        setDockerConnected(false)
-      }
-    }
-    const fetchTrivy = async () => {
-      try {
-        const res = await api.get('/api/security/trivy-status')
-        setTrivyStatus(res.data)
-      } catch {
-        setTrivyStatus(null)
-      }
-    }
-    fetchHealth()
-    fetchDocker()
-    fetchTrivy()
+    fetchAllSettings()
   }, [])
 
   const sections = [
     {
       icon: Server,
       title: 'API Gateway & Reverse Proxy',
-      description: 'Production gateway entrypoint and backend API configuration',
+      description: 'Production entrypoint routing, Nginx unified proxy, and HTTP REST interface',
+      status: health?.status === 'ok' ? 'HEALTHY' : 'OFFLINE',
+      statusColor: health?.status === 'ok' ? 'teal' : 'critical',
       items: [
-        { label: 'API Base URL', value: import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'Same-origin (/api)' : 'http://localhost:5000') },
-        { label: 'Status', value: health?.status === 'ok' ? '✅ Connected' : '❌ Disconnected' },
-        { label: 'Version', value: health?.version || '1.0.0' },
-        { label: 'Service Uptime', value: health?.uptime ? `${health.uptime}s` : '—' },
+        { label: 'Gateway Mode', value: import.meta.env.PROD ? 'Nginx Unified Gateway (:8080)' : 'Vite Dev Proxy (:5000)' },
+        { label: 'Base API Endpoint', value: import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'Same-origin (/api)' : 'http://localhost:5000') },
+        { label: 'Environment Mode', value: health?.environment || (import.meta.env.PROD ? 'production' : 'development') },
+        { label: 'Service Uptime', value: health?.uptime ? `${Math.floor(health.uptime / 60)} minutes` : '—' },
       ],
     },
     {
       icon: Database,
-      title: 'Database',
-      description: 'PostgreSQL connection via Prisma ORM',
+      title: 'PostgreSQL Database & Prisma ORM',
+      description: 'Relational telemetry persistence, scan archives, and deduplicated alert registry',
+      status: health?.database === 'connected' ? 'CONNECTED' : 'DISCONNECTED',
+      statusColor: health?.database === 'connected' ? 'teal' : 'critical',
       items: [
-        { label: 'Engine', value: 'PostgreSQL 16' },
-        { label: 'Connection Status', value: health?.database === 'connected' ? '✅ Connected' : '❌ Disconnected' },
-        { label: 'ORM', value: 'Prisma Client' },
+        { label: 'Database Engine', value: 'PostgreSQL 16 (Alpine)' },
+        { label: 'Connection Status', value: health?.database === 'connected' ? 'Active pool verified' : 'Unreachable' },
+        { label: 'ORM Engine', value: 'Prisma Client 6.9' },
+        { label: 'Internal Host', value: 'postgres:5432 (Isolated Docker Network)' },
       ],
     },
     {
       icon: Container,
-      title: 'Docker Engine',
-      description: 'Docker Engine integration via host socket',
+      title: 'Docker Engine Socket Integration',
+      description: 'Host Docker daemon communication via mounted UNIX socket (/var/run/docker.sock)',
+      status: dockerConnected ? 'CONNECTED' : 'OFFLINE',
+      statusColor: dockerConnected ? 'teal' : 'critical',
       items: [
-        { label: 'Socket Status', value: dockerConnected ? '✅ Connected' : '❌ Disconnected' },
-        { label: 'Docker Version', value: dockerInfo?.dockerVersion || '—' },
+        { label: 'UNIX Socket Status', value: dockerConnected ? 'Mounted & Operational' : 'Socket Unavailable' },
+        { label: 'Docker Daemon Version', value: dockerInfo?.dockerVersion || '—' },
         { label: 'API Version', value: dockerInfo?.apiVersion || '—' },
-        { label: 'Total Containers', value: dockerInfo?.containersTotal ?? '—' },
-        { label: 'Total Images', value: dockerInfo?.imagesTotal ?? '—' },
+        { label: 'Storage Driver', value: dockerInfo?.storageDriver || 'overlay2' },
       ],
     },
     {
       icon: Shield,
-      title: 'Security Scanner',
-      description: 'Trivy vulnerability scanner integration',
+      title: 'Trivy Security Scanner',
+      description: 'Aqua Security Trivy CLI container vulnerability scanner integration',
+      status: trivyStatus?.installed ? 'ACTIVE' : 'OFFLINE',
+      statusColor: trivyStatus?.installed ? 'teal' : 'critical',
       items: [
-        { label: 'Engine', value: 'Aqua Security Trivy CLI' },
-        { label: 'Status', value: trivyStatus?.installed ? `✅ Installed (${trivyStatus.version || 'active'})` : '❌ Not Available' },
-        { label: 'Scan Mode', value: 'On-Demand Container Image Inspection' },
+        { label: 'Scanner Engine', value: 'Aqua Security Trivy CLI' },
+        { label: 'Execution Mode', value: 'Local On-Demand CLI Subprocess' },
+        { label: 'Scanner Status', value: trivyStatus?.installed ? `Installed (${trivyStatus.version || 'Ready'})` : 'Binary not found in PATH' },
+        { label: 'Database Vulnerabilities', value: 'Auto-updated Aqua Trivy DB' },
       ],
     },
     {
       icon: Bell,
-      title: 'Alert System',
-      description: 'Active monitoring rules and notification thresholds',
+      title: 'Alerting & Policy Rule Engine',
+      description: 'Background workers evaluating CG001–CG006 policies and cgroup utilization thresholds',
+      status: 'ACTIVE',
+      statusColor: 'teal',
       items: [
-        { label: 'CPU Alert Threshold', value: '80%' },
-        { label: 'Memory Alert Threshold', value: '80%' },
-        { label: 'Policy Score Minimum', value: '70 / 100' },
-        { label: 'Status', value: '✅ Active (AL001–AL006 rules evaluated every 10s)' },
+        { label: 'Evaluation Cycle', value: 'Every 10,000ms (10 seconds)' },
+        { label: 'CPU Alert Threshold', value: '80% utilization sustained' },
+        { label: 'Memory Alert Threshold', value: '80% cgroup limit sustained' },
+        { label: 'Policy Score Minimum', value: '70 / 100 threshold' },
       ],
     },
     {
       icon: Clock,
-      title: 'Metrics Telemetry',
-      description: 'Continuous resource monitoring and persistence',
+      title: 'Metrics Telemetry Aggregator',
+      description: 'Continuous container resource sampling and batch writing to database',
+      status: 'ACTIVE',
+      statusColor: 'teal',
       items: [
-        { label: 'Collection Frequency', value: 'Every 5s' },
-        { label: 'Persistence Target', value: 'PostgreSQL (container_metrics)' },
-        { label: 'Status', value: '✅ Active (Worker Running)' },
+        { label: 'Collection Frequency', value: 'Every 5,000ms (5 seconds)' },
+        { label: 'Batch Ingestion', value: 'Bulk insert via Prisma createMany' },
+        { label: 'Telemetry Metrics', value: 'CPU %, Memory MB, Network Rx/Tx, Disk I/O' },
+        { label: 'Log Stream Engine', value: 'Socket.IO multiplexed Docker modem' },
       ],
     },
   ]
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Settings</h1>
-        <p className="mt-1 text-[13px] text-text-secondary">
-          ContainerGuard platform configuration, subsystem health, and runtime telemetry.
-        </p>
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-[#F3F5F7]">System Configuration</h1>
+            <span className="rounded-md border border-white/5 bg-[#11161F] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#36D6B4]">
+              Runtime Topology
+            </span>
+          </div>
+          <p className="mt-1 text-[13px] text-[#A7B0BE]">
+            Architectural subsystems, database connection pool, Docker daemon integration, and security scanner parameters.
+          </p>
+        </div>
+
+        <button
+          onClick={fetchAllSettings}
+          className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#11161F] px-3 py-1.5 text-[12px] font-medium text-[#A7B0BE] hover:bg-[#151B24] hover:text-[#F3F5F7] transition"
+        >
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          Verify Subsystems
+        </button>
       </div>
 
-      <div className="space-y-4">
-        {sections.map((section) => (
-          <div key={section.title} className="rounded-xl border border-border-primary bg-bg-surface overflow-hidden">
-            <div className="flex items-center gap-3 border-b border-border-primary px-5 py-3">
-              <section.icon size={16} className="text-accent-primary" />
+      {/* Configuration Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {sections.map((sec) => {
+          const Icon = sec.icon
+          const isTeal = sec.statusColor === 'teal'
+
+          return (
+            <div
+              key={sec.title}
+              className="rounded-xl border border-white/[0.07] bg-[#11161F] p-5 flex flex-col justify-between"
+            >
               <div>
-                <h3 className="text-[13px] font-semibold text-text-primary">{section.title}</h3>
-                <p className="text-[11px] text-text-muted">{section.description}</p>
+                <div className="flex items-start justify-between gap-3 border-b border-white/[0.06] pb-3 mb-3">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] text-[#36D6B4]">
+                      <Icon size={16} />
+                    </div>
+                    <div>
+                      <h2 className="font-semibold text-[#F3F5F7] text-[13px]">{sec.title}</h2>
+                      <p className="text-[11px] text-[#697384] mt-0.5">{sec.description}</p>
+                    </div>
+                  </div>
+
+                  <span
+                    className={`rounded-md border px-2 py-0.5 font-mono text-[10px] font-bold ${
+                      isTeal
+                        ? 'border-[#36D6B4]/30 bg-[#36D6B4]/10 text-[#36D6B4]'
+                        : 'border-[#FF5C70]/30 bg-[#FF5C70]/10 text-[#FF5C70]'
+                    }`}
+                  >
+                    {sec.status}
+                  </span>
+                </div>
+
+                <div className="space-y-2.5 font-mono text-[12px]">
+                  {sec.items.map((item) => (
+                    <div key={item.label} className="flex items-center justify-between border-b border-white/[0.03] pb-2">
+                      <span className="text-[#697384] text-[11px]">{item.label}</span>
+                      <span className="font-medium text-[#F3F5F7] text-right truncate max-w-xs">
+                        {item.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-            <div className="px-5 py-3">
-              {section.items.map((item) => (
-                <div key={item.label} className="flex items-center justify-between border-b border-border-primary py-2.5 last:border-0">
-                  <span className="text-[12px] text-text-secondary">{item.label}</span>
-                  <span className="font-mono text-[12px] text-text-primary">{item.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )

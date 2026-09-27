@@ -1,5 +1,6 @@
 import { getDockerClient, listContainers } from './dockerService.js';
 import { getLatestScanForImage } from './securityPersistenceService.js';
+import logger from '../utils/logger.js';
 
 import { evaluateCG001 } from './policies/cg001RootUser.js';
 import { evaluateCG002 } from './policies/cg002Privileged.js';
@@ -91,7 +92,7 @@ export async function evaluateContainerPolicy(containerId) {
       latestScan = await getLatestScanForImage(imageName);
     }
   } catch (scanErr) {
-    console.warn(`[Policy Engine] Could not fetch scan for image "${imageName}":`, scanErr.message);
+    logger.warn(`Could not fetch scan for image ${imageName}`, { context: 'PolicyEngine', image: imageName, error: scanErr.message });
     latestScan = null;
   }
 
@@ -130,7 +131,13 @@ export async function evaluateContainerPolicy(containerId) {
       const finding = evalFn();
       findings.push(finding);
     } catch (evalErr) {
-      console.error(`[Policy Engine] Evaluation error on rule ${ruleId}:`, evalErr);
+      logger.error(`Evaluation error on rule ${ruleId} for container ${containerName}`, {
+        context: 'PolicyEngine',
+        ruleId,
+        containerId: normalizedContainerId,
+        containerName,
+        error: evalErr.message,
+      });
       findings.push({
         ruleId,
         ruleName: `Policy ${ruleId}`,

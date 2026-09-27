@@ -3,6 +3,7 @@ import { getMetrics } from './metricsWorker.js';
 import { getLatestScanForImage } from '../services/securityPersistenceService.js';
 import { evaluateContainerPolicy } from '../services/policyService.js';
 import { recordOrUpdateAlert, autoResolveAlert, initAlertDatabase } from '../services/alertService.js';
+import logger from '../utils/logger.js';
 
 let workerIntervalId = null;
 let isEvaluating = false;
@@ -22,7 +23,7 @@ const getRestartWindowSeconds = () => parseInt(process.env.RESTART_LOOP_WINDOW_S
  */
 export async function startAlertWorker() {
   if (workerIntervalId !== null) {
-    console.warn('[AlertWorker] Worker is already running.');
+    logger.warn('[AlertWorker] Worker is already running.');
     return;
   }
 
@@ -30,7 +31,7 @@ export async function startAlertWorker() {
   await initAlertDatabase();
 
   const intervalMs = getIntervalMs();
-  console.log(`[AlertWorker] Started (Interval: ${intervalMs}ms)`);
+  logger.info('[AlertWorker] Started', { intervalMs });
 
   workerIntervalId = setInterval(runAlertEvaluation, intervalMs);
 
@@ -45,7 +46,7 @@ export function stopAlertWorker() {
   if (workerIntervalId !== null) {
     clearInterval(workerIntervalId);
     workerIntervalId = null;
-    console.log('[AlertWorker] Stopped');
+    logger.info('[AlertWorker] Stopped');
   }
 }
 
@@ -118,7 +119,7 @@ async function runAlertEvaluation() {
           }
         }
       } catch (err) {
-        console.warn(`[AlertWorker] AL001 check failed for ${containerName}:`, err.message);
+        logger.warn(`AL001 check failed for ${containerName}`, { context: 'AlertWorker', containerName, error: err.message });
       }
 
       // ---------------------------------------------------------------------
@@ -149,7 +150,7 @@ async function runAlertEvaluation() {
           }
         }
       } catch (err) {
-        console.warn(`[AlertWorker] AL002 check failed for ${containerName}:`, err.message);
+        logger.warn(`AL002 check failed for ${containerName}`, { context: 'AlertWorker', containerName, error: err.message });
       }
 
       // ---------------------------------------------------------------------
@@ -176,7 +177,7 @@ async function runAlertEvaluation() {
           await autoResolveAlert('AL003', containerId, 'Docker healthcheck returned to healthy status');
         }
       } catch (err) {
-        console.warn(`[AlertWorker] AL003 check failed for ${containerName}:`, err.message);
+        logger.warn(`AL003 check failed for ${containerName}`, { context: 'AlertWorker', containerName, error: err.message });
       }
 
       // ---------------------------------------------------------------------
@@ -212,7 +213,7 @@ async function runAlertEvaluation() {
           await autoResolveAlert('AL004', containerId, `Container has stabilized and been running for ${uptimeSeconds}s`);
         }
       } catch (err) {
-        console.warn(`[AlertWorker] AL004 check failed for ${containerName}:`, err.message);
+        logger.warn(`AL004 check failed for ${containerName}`, { context: 'AlertWorker', containerName, error: err.message });
       }
 
       // ---------------------------------------------------------------------
@@ -243,7 +244,7 @@ async function runAlertEvaluation() {
           }
         }
       } catch (err) {
-        console.warn(`[AlertWorker] AL005 check failed for ${containerName}:`, err.message);
+        logger.warn(`AL005 check failed for ${containerName}`, { context: 'AlertWorker', containerName, error: err.message });
       }
 
       // ---------------------------------------------------------------------
@@ -274,11 +275,14 @@ async function runAlertEvaluation() {
           }
         }
       } catch (err) {
-        console.warn(`[AlertWorker] AL006 check failed for ${containerName}:`, err.message);
+        logger.warn(`AL006 check failed for ${containerName}`, { context: 'AlertWorker', containerName, error: err.message });
       }
     }
   } catch (cycleErr) {
-    console.error('[AlertWorker] Error in alert evaluation cycle:', cycleErr.message);
+    logger.error('[AlertWorker] Error in alert evaluation cycle', {
+      error: cycleErr.message,
+      stack: cycleErr.stack,
+    });
   } finally {
     isEvaluating = false;
   }

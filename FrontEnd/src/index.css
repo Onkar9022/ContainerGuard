@@ -1,74 +1,107 @@
 @import "tailwindcss";
 
 /* ============================================================
-   ContainerGuard — Design Tokens & Global Styles
-   Dark-first DevOps dashboard theme
+   ContainerGuard — Premium DevOps & Security Design System
+   Visual Identity: Dark Graphite • Precision Cyan • Developer-Grade
    ============================================================ */
 
-@theme {
-  /* Background layers */
-  --color-bg-primary: #0b0d11;
-  --color-bg-secondary: #0f1117;
-  --color-bg-tertiary: #151820;
-  --color-bg-surface: #1a1e2a;
-  --color-bg-elevated: #1e2233;
-  --color-bg-hover: #252a3a;
+:root {
+  /* Surface Layers (Deep Charcoal / Graphite) */
+  --bg-app: #080B10;
+  --bg-primary: #0D1118;
+  --bg-secondary: #11161F;
+  --bg-elevated: #151B24;
+  --bg-hover: #1A212C;
+  --bg-active: #202936;
+  --bg-overlay: rgba(8, 11, 16, 0.82);
 
-  /* Sidebar */
-  --color-sidebar-bg: #0a0c10;
-  --color-sidebar-hover: #151820;
-  --color-sidebar-active: #1a2332;
+  /* Border Tokens */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-strong: rgba(255, 255, 255, 0.13);
+  --border-focus: rgba(54, 214, 180, 0.45);
 
-  /* Borders */
-  --color-border-primary: #1e2233;
-  --color-border-secondary: #2a2f42;
-  --color-border-accent: #3a4058;
+  /* Typography / Text Colors */
+  --text-primary: #F3F5F7;
+  --text-secondary: #A7B0BE;
+  --text-muted: #697384;
+  --text-disabled: #4B5563;
 
-  /* Text */
-  --color-text-primary: #e4e7ed;
-  --color-text-secondary: #8b92a5;
-  --color-text-tertiary: #5a6178;
-  --color-text-muted: #444b5f;
+  /* Brand Accent: Refined Mint / Teal */
+  --accent-primary: #36D6B4;
+  --accent-hover: #4DE1C1;
+  --accent-muted: rgba(54, 214, 180, 0.12);
+  --accent-subtle: rgba(54, 214, 180, 0.06);
+  --accent-border: rgba(54, 214, 180, 0.28);
+  --accent-glow: rgba(54, 214, 180, 0.20);
 
-  /* Brand / Accent */
-  --color-accent-primary: #00d4aa;
-  --color-accent-secondary: #00b893;
-  --color-accent-glow: #00d4aa33;
+  /* Semantic Status Colors */
+  --color-critical: #FF5C70;
+  --color-critical-bg: rgba(255, 92, 112, 0.10);
+  --color-critical-border: rgba(255, 92, 112, 0.25);
 
-  /* Status */
-  --color-status-running: #00d4aa;
-  --color-status-stopped: #6b7280;
-  --color-status-error: #ef4444;
-  --color-status-warning: #f59e0b;
+  --color-warning: #FF9B54;
+  --color-warning-bg: rgba(255, 155, 84, 0.10);
+  --color-warning-border: rgba(255, 155, 84, 0.25);
 
-  /* Severity */
-  --color-severity-critical: #ef4444;
-  --color-severity-high: #f97316;
-  --color-severity-medium: #eab308;
-  --color-severity-low: #6b7280;
+  --color-medium: #F2C94C;
+  --color-medium-bg: rgba(242, 201, 76, 0.10);
+  --color-medium-border: rgba(242, 201, 76, 0.25);
 
-  /* Charts */
-  --color-chart-cyan: #00d4aa;
-  --color-chart-blue: #3b82f6;
-  --color-chart-purple: #8b5cf6;
-  --color-chart-orange: #f97316;
+  --color-info: #6EA8FF;
+  --color-info-bg: rgba(110, 168, 255, 0.10);
+  --color-info-border: rgba(110, 168, 255, 0.25);
 
-  /* Font families */
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --color-success: #35D399;
+  --color-success-bg: rgba(53, 211, 153, 0.10);
+  --color-success-border: rgba(53, 211, 153, 0.25);
+
+  /* Font Families */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 /* ============================================================
-   Base
+   Base Resets & Global Application Rules
+   ============================================================ */
+html {
+  font-size: 14px;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-app);
+  color: var(--text-primary);
+  overflow-x: hidden;
+}
+
+/* Global Subtle Ambient Vignette */
+#root {
+  min-height: 100vh;
+  background: 
+    radial-gradient(ellipse 80% 50% at 50% -20%, rgba(54, 214, 180, 0.035), transparent 70%),
+    radial-gradient(circle at 100% 100%, rgba(110, 168, 255, 0.02), transparent 50%),
+    var(--bg-app);
+}
+
+/* ============================================================
+   Custom Desktop Scrollbar
    ============================================================ */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #2a2f42 transparent;
+  scrollbar-color: rgba(255, 255, 255, 0.12) transparent;
 }
 
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 *::-webkit-scrollbar-track {
@@ -76,64 +109,106 @@
 }
 
 *::-webkit-scrollbar-thumb {
-  background: #2a2f42;
-  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.11);
+  border-radius: 9999px;
 }
 
 *::-webkit-scrollbar-thumb:hover {
-  background: #3a4058;
-}
-
-html {
-  font-size: 14px;
-}
-
-body {
-  margin: 0;
-  padding: 0;
-  background-color: var(--color-bg-primary);
-  color: var(--color-text-primary);
-  font-family: var(--font-sans);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  background: rgba(255, 255, 255, 0.22);
 }
 
 /* ============================================================
-   Utility classes
+   Typography Utilities
    ============================================================ */
 .font-mono {
   font-family: var(--font-mono);
+  letter-spacing: -0.02em;
 }
 
-.glow-accent {
-  box-shadow: 0 0 20px var(--color-accent-glow);
+/* ============================================================
+   Glassmorphism & Surface Tokens
+   ============================================================ */
+.surface-glass {
+  background: rgba(13, 17, 24, 0.76);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid var(--border-default);
 }
 
-/* Animated pulse for live indicators */
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+.surface-card {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.animate-pulse-dot {
-  animation: pulse-dot 2s ease-in-out infinite;
+.surface-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
 }
 
-/* Subtle fade-in for page transitions */
-@keyframes fade-in {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+.surface-card-subtle {
+  background-color: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+}
+
+/* ============================================================
+   Micro-Animations
+   ============================================================ */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes pulseDot {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.85);
+  }
 }
 
 .animate-fade-in {
-  animation: fade-in 0.3s ease-out;
+  animation: fadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-/* Progress bar fill animation */
-@keyframes fill-bar {
-  from { width: 0; }
+.animate-scale-in {
+  animation: scaleIn 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.animate-fill-bar {
-  animation: fill-bar 0.8s ease-out;
+.animate-pulse-dot {
+  animation: pulseDot 2s ease-in-out infinite;
+}
+
+/* Disable animations for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -1,46 +1,68 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Container, RefreshCw, AlertCircle } from 'lucide-react'
+import {
+  Container as ContainerIcon,
+  RefreshCw,
+  Search,
+  Copy,
+  Check,
+  ArrowRight,
+  Filter,
+  Layers,
+} from 'lucide-react'
 import StatusBadge from '../components/StatusBadge'
 import SearchInput from '../components/SearchInput'
+import ProgressBar from '../components/ProgressBar'
 import EmptyState from '../components/EmptyState'
 import api from '../services/api'
 
 export default function Containers() {
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState('all') // all, running, stopped
   const [containers, setContainers] = useState([])
+  const [liveMetrics, setLiveMetrics] = useState([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
+  const [copiedId, setCopiedId] = useState(null)
   const navigate = useNavigate()
 
-  const fetchContainers = useCallback(async () => {
+  const fetchContainersAndMetrics = useCallback(async () => {
     try {
-      const res = await api.get('/api/docker/containers')
-      setContainers(res.data || [])
-      setError(null)
-    } catch (err) {
-      setError(err.response?.data?.message || 'Failed to fetch containers')
-      setContainers([])
+      const [contRes, metricsRes] = await Promise.allSettled([
+        api.get('/api/docker/containers'),
+        api.get('/api/metrics'),
+      ])
+
+      if (contRes.status === 'fulfilled') setContainers(contRes.value?.data || [])
+      if (metricsRes.status === 'fulfilled') setLiveMetrics(metricsRes.value?.data || [])
     } finally {
       setLoading(false)
     }
   }, [])
 
   useEffect(() => {
-    fetchContainers()
-    const interval = setInterval(fetchContainers, 10000)
+    fetchContainersAndMetrics()
+    const interval = setInterval(fetchContainersAndMetrics, 10000)
     return () => clearInterval(interval)
-  }, [fetchContainers])
+  }, [fetchContainersAndMetrics])
 
-  // Derived counts
-  const running = containers.filter((c) => c.state === 'running').length
-  const stopped = containers.filter((c) => c.state !== 'running').length
-  const total = containers.length
+  // Copy helper
+  const handleCopy = (text, id, e) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 1500)
+  }
 
-  // Filtering
+  // Smart image string format: simplifies long ECR or registry URLs
+  function formatImageString(image) {
+    if (!image) return '—'
+    const parts = image.split('/')
+    return parts[parts.length - 1] // returns e.g. containerguard-backend:a03dd32a
+  }
+
+  // Filtered containers
   const filtered = containers.filter((c) => {
-    const name = c.names?.[0] || ''
+    const name = c.names?.[0]?.replace(/^\//, '') || ''
     const matchesSearch =
       !search ||
       name.toLowerCase().includes(search.toLowerCase()) ||
@@ -55,145 +77,202 @@ export default function Containers() {
     return matchesSearch && matchesStatus
   })
 
-  // Format port bindings for display
-  function formatPorts(ports) {
-    if (!ports || ports.length === 0) return '—'
-    return ports
-      .filter((p) => p.PublicPort)
-      .map((p) => `${p.PublicPort}→${p.PrivatePort}/${p.Type}`)
-      .join(', ') || '—'
+  // Map live metrics by containerId
+  const metricsMap = new Map()
+  for (const m of liveMetrics) {
+    if (m.containerId) metricsMap.set(m.containerId, m)
   }
 
-  // Format creation timestamp
-  function formatCreated(ts) {
-    if (!ts) return '—'
-    const d = new Date(ts * 1000)
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-  }
+  const runningCount = containers.filter((c) => c.state === 'running').length
+  const stoppedCount = containers.filter((c) => c.state !== 'running').length
 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-bold text-text-primary">Containers</h1>
-            <span className="rounded-full bg-bg-surface px-2.5 py-0.5 text-[12px] font-semibold text-text-secondary border border-border-primary">
-              {total} Unit{total !== 1 ? 's' : ''}
+            <h1 className="text-2xl font-bold tracking-tight text-[#F3F5F7]">Containers</h1>
+            <span className="rounded-md border border-white/5 bg-[#11161F] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#36D6B4]">
+              {containers.length} Units
             </span>
           </div>
-          <p className="mt-1 text-[13px] text-text-secondary">
-            Monitor and inspect Docker containers running on your infrastructure.
+          <p className="mt-1 text-[13px] text-[#A7B0BE]">
+            Docker Engine workload inventory, live runtime statistics, and container lifecycle inspect.
           </p>
         </div>
+
         <div className="flex items-center gap-2">
           <button
-            onClick={fetchContainers}
-            className="flex items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-surface px-3 py-1.5 text-[12px] font-medium text-text-secondary transition hover:text-text-primary"
+            onClick={fetchContainersAndMetrics}
+            className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#11161F] px-3 py-1.5 text-[12px] font-medium text-[#A7B0BE] hover:bg-[#151B24] hover:text-[#F3F5F7] transition"
           >
             <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-            Refresh
+            Sync
           </button>
         </div>
       </div>
 
-      {/* Fleet stats bar */}
-      <div className="flex items-center gap-3 text-[12px]">
-        <span className="text-text-secondary">Active Fleet:</span>
-        <span className="font-semibold text-accent-primary">{running} Running</span>
-        <span className="text-text-muted">·</span>
-        <span className="text-text-secondary">{stopped} Stopped</span>
-        <span className="text-text-muted">·</span>
-        <span className="text-text-secondary">Total: <span className="font-mono">{total}</span></span>
-      </div>
-
-      {/* Error banner */}
-      {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-status-error/30 bg-status-error/10 px-4 py-2.5 text-[12px] text-status-error">
-          <AlertCircle size={14} />
-          <span>{error}</span>
-        </div>
-      )}
-
-      {/* Search + Filters */}
-      <div className="flex items-center gap-3">
-        <SearchInput
-          placeholder="Search container name, ID or image..."
-          value={search}
-          onChange={setSearch}
-          className="w-96"
-        />
-        <div className="flex items-center gap-1 text-[12px]">
-          <span className="text-text-muted mr-1">Status:</span>
-          {['all', 'running', 'stopped'].map((s) => (
+      {/* Filter and Search Bar */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#11161F] p-2.5">
+        {/* Status Filter Tabs */}
+        <div className="flex items-center gap-1">
+          {[
+            { id: 'all', label: 'All', count: containers.length },
+            { id: 'running', label: 'Running', count: runningCount },
+            { id: 'stopped', label: 'Stopped', count: stoppedCount },
+          ].map((tab) => (
             <button
-              key={s}
-              onClick={() => setStatusFilter(s)}
-              className={`rounded-lg px-2.5 py-1 font-medium capitalize transition ${
-                statusFilter === s
-                  ? 'bg-bg-hover text-text-primary'
-                  : 'text-text-muted hover:text-text-secondary'
+              key={tab.id}
+              onClick={() => setStatusFilter(tab.id)}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1 text-[12px] font-medium transition ${
+                statusFilter === tab.id
+                  ? 'bg-[#151B24] text-[#36D6B4] shadow-sm'
+                  : 'text-[#A7B0BE] hover:text-[#F3F5F7]'
               }`}
             >
-              {s === 'all' ? `All (${total})` : s === 'running' ? `Running (${running})` : `Stopped (${stopped})`}
+              <span>{tab.label}</span>
+              <span className="font-mono text-[10px] text-[#697384]">({tab.count})</span>
             </button>
           ))}
         </div>
+
+        {/* Search Input */}
+        <div className="w-full sm:w-72">
+          <SearchInput
+            placeholder="Search by name, image, or ID..."
+            value={search}
+            onChange={setSearch}
+          />
+        </div>
       </div>
 
-      {/* Container table */}
-      <div className="rounded-xl border border-border-primary bg-bg-surface overflow-hidden">
-        {/* Table header */}
-        <div className="grid grid-cols-[1fr_100px_1fr_120px_120px] gap-3 items-center px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-text-muted border-b border-border-primary">
-          <span>Container & ID</span>
-          <span>Status</span>
-          <span>Image</span>
-          <span>Ports</span>
-          <span>Created</span>
+      {/* Docker Desktop-Inspired Container Workstation Table */}
+      <div className="rounded-xl border border-white/[0.07] bg-[#11161F] overflow-hidden">
+        {/* Table Column Header */}
+        <div className="grid grid-cols-[1.5fr_100px_1.5fr_120px_120px_60px] gap-3 px-5 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#697384] border-b border-white/[0.06] bg-[#0D1118]">
+          <span>Workload / Container</span>
+          <span>State</span>
+          <span>Image Tag</span>
+          <span>CPU Utilization</span>
+          <span>Memory Usage</span>
+          <span className="text-right">Action</span>
         </div>
 
-        {/* Loading state */}
-        {loading && containers.length === 0 && (
-          <div className="flex items-center justify-center py-16 text-[13px] text-text-muted">
-            <RefreshCw size={16} className="animate-spin mr-2" />
-            Connecting to Docker Engine...
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!loading && filtered.length === 0 && !error && (
-          <EmptyState
-            icon={Container}
-            title="No containers detected"
-            message={total === 0
-              ? "No containers are running on this Docker Engine. Start a container to see it here."
-              : "No containers match your current search or filter."
-            }
-          />
-        )}
-
-        {/* Container rows */}
-        {filtered.map((c) => (
-          <div
-            key={c.id}
-            onClick={() => navigate(`/containers/${c.id}`)}
-            className="grid grid-cols-[1fr_100px_1fr_120px_120px] gap-3 items-center px-5 py-3 border-b border-border-primary last:border-b-0 text-[12px] cursor-pointer transition hover:bg-bg-hover"
-          >
-            <div>
-              <p className="font-medium text-text-primary truncate">{c.names?.[0] || '—'}</p>
-              <p className="font-mono text-[10px] text-text-muted truncate">{c.id.slice(0, 12)}</p>
+        {/* Rows */}
+        <div className="divide-y divide-white/[0.04]">
+          {filtered.length === 0 ? (
+            <div className="py-16 text-center">
+              <EmptyState
+                icon={ContainerIcon}
+                title="No matching containers found"
+                message={
+                  search
+                    ? `No containers match your search query "${search}".`
+                    : 'No Docker containers found on this engine.'
+                }
+              />
             </div>
-            <StatusBadge status={c.state} />
-            <p className="text-text-secondary truncate">{c.image}</p>
-            <p className="font-mono text-[11px] text-text-muted truncate">{formatPorts(c.ports)}</p>
-            <p className="text-text-muted">{formatCreated(c.created)}</p>
-          </div>
-        ))}
+          ) : (
+            filtered.map((c) => {
+              const metric = metricsMap.get(c.id)
+              const containerName = c.names?.[0]?.replace(/^\//, '') || c.id.slice(0, 12)
+              const shortId = c.id.slice(0, 12)
+              const formattedImage = formatImageString(c.image)
 
-        {/* Footer */}
-        <div className="flex items-center justify-between border-t border-border-primary px-5 py-2.5 text-[11px] text-text-muted">
-          <span>Showing {filtered.length} of {total} containers</span>
-          <span>Docker Engine: Connected</span>
+              return (
+                <div
+                  key={c.id}
+                  onClick={() => navigate(`/containers/${c.id}`)}
+                  className="grid grid-cols-[1.5fr_100px_1.5fr_120px_120px_60px] gap-3 items-center px-5 py-3 text-[12px] cursor-pointer hover:bg-[#151B24] transition-colors"
+                >
+                  {/* Container Name & ID */}
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/5 bg-white/[0.02] text-[#36D6B4]">
+                      <ContainerIcon size={14} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="font-semibold text-[#F3F5F7] truncate">{containerName}</p>
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono text-[10px] text-[#697384]">{shortId}</span>
+                        <button
+                          onClick={(e) => handleCopy(c.id, c.id, e)}
+                          title="Copy full ID"
+                          className="text-[#697384] hover:text-[#36D6B4] transition"
+                        >
+                          {copiedId === c.id ? <Check size={10} className="text-[#36D6B4]" /> : <Copy size={10} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Status */}
+                  <div>
+                    <StatusBadge status={c.state} />
+                  </div>
+
+                  {/* Image Tag */}
+                  <div className="min-w-0">
+                    <span
+                      title={c.image}
+                      className="font-mono text-[11px] text-[#A7B0BE] hover:text-[#F3F5F7] truncate block"
+                    >
+                      {formattedImage}
+                    </span>
+                  </div>
+
+                  {/* CPU Meter */}
+                  <div className="min-w-0">
+                    {metric ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between font-mono text-[10px]">
+                          <span className="text-[#A7B0BE]">{metric.cpuPercent?.toFixed(1) || '0'}%</span>
+                        </div>
+                        <ProgressBar value={metric.cpuPercent || 0} max={100} size="xs" color="teal" />
+                      </div>
+                    ) : (
+                      <span className="font-mono text-[10px] text-[#697384]">0.0%</span>
+                    )}
+                  </div>
+
+                  {/* Memory Meter */}
+                  <div className="min-w-0">
+                    {metric ? (
+                      <div className="space-y-1">
+                        <div className="flex items-center justify-between font-mono text-[10px]">
+                          <span className="text-[#A7B0BE]">
+                            {((metric.memoryUsage || 0) / (1024 * 1024)).toFixed(0)} MB
+                          </span>
+                        </div>
+                        <ProgressBar
+                          value={metric.memoryPercent || 0}
+                          max={100}
+                          size="xs"
+                          color={metric.memoryPercent > 80 ? 'critical' : 'blue'}
+                        />
+                      </div>
+                    ) : (
+                      <span className="font-mono text-[10px] text-[#697384]">0 MB</span>
+                    )}
+                  </div>
+
+                  {/* Action / Inspect */}
+                  <div className="flex justify-end">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate(`/containers/${c.id}`)
+                      }}
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-white/5 text-[#697384] hover:bg-white/5 hover:text-[#36D6B4] transition"
+                      title="Inspect container"
+                    >
+                      <ArrowRight size={13} />
+                    </button>
+                  </div>
+                </div>
+              )
+            })
+          )}
         </div>
       </div>
     </div>

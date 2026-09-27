@@ -1,4 +1,5 @@
 import prisma from '../config/prisma.js';
+import logger from '../utils/logger.js';
 
 /**
  * Ensures the `alerts` table and indexes exist in PostgreSQL.
@@ -34,9 +35,9 @@ export async function initAlertDatabase() {
       CREATE INDEX IF NOT EXISTS "alerts_containerId_idx" ON "alerts"("containerId");
     `);
 
-    console.log('[AlertService] Alerts table verified & indexed in PostgreSQL');
+    logger.info('Alerts table verified & indexed in PostgreSQL', { context: 'AlertService' });
   } catch (err) {
-    console.error('[AlertService] Failed to initialize alerts table:', err.message);
+    logger.error('Failed to initialize alerts table', { context: 'AlertService', error: err.message });
   }
 }
 
@@ -96,7 +97,7 @@ export async function recordOrUpdateAlert({
       },
     });
   } catch (err) {
-    console.error(`[AlertService] Failed to record alert ${alertCode} for container ${containerId}:`, err.message);
+    logger.error(`Failed to record alert ${alertCode} for container ${containerId}`, { context: 'AlertService', alertCode, containerId, error: err.message });
     throw err;
   }
 }
@@ -137,7 +138,7 @@ export async function autoResolveAlert(alertCode, containerId, resolutionReason 
       },
     });
   } catch (err) {
-    console.error(`[AlertService] Failed to auto-resolve alert ${alertCode} for ${containerId}:`, err.message);
+    logger.error(`Failed to auto-resolve alert ${alertCode} for container ${containerId}`, { context: 'AlertService', alertCode, containerId, error: err.message });
     return null;
   }
 }

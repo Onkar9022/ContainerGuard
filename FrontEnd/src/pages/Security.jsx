@@ -10,13 +10,28 @@ import {
   AlertTriangle,
   Info,
   ChevronDown,
+  ChevronRight,
   TrendingUp,
-  TrendingDown,
-  Minus
+  Minus,
+  Check,
+  XCircle,
+  Lock,
+  Layers,
+  Search,
 } from 'lucide-react'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts'
 import SeverityBadge from '../components/SeverityBadge'
 import SearchInput from '../components/SearchInput'
+import ChartTooltip from '../components/ChartTooltip'
+import ProgressBar from '../components/ProgressBar'
 import api from '../services/api'
 
 export default function Security() {
@@ -30,8 +45,9 @@ export default function Security() {
   const [search, setSearch] = useState('')
   const [trivyStatus, setTrivyStatus] = useState({ checked: false, installed: false, version: '' })
   const [scanHistory, setScanHistory] = useState([])
-  const [loadingHistory, setLoadingHistory] = useState(false)
-  
+  const [expandedCve, setExpandedCve] = useState(null)
+
+  // Comparison & Trend
   const [comparison, setComparison] = useState(null)
   const [trend, setTrend] = useState([])
   const [loadingComparison, setLoadingComparison] = useState(false)
@@ -43,33 +59,9 @@ export default function Security() {
   const [policyData, setPolicyData] = useState(null)
   const [loadingPolicy, setLoadingPolicy] = useState(false)
   const [policyError, setPolicyError] = useState(null)
+  const [expandedRule, setExpandedRule] = useState(null)
 
-  // Fetch comparison and trend whenever the selected scan changes
-  useEffect(() => {
-    if (scanResult?.scanId && selectedImage) {
-      fetchComparisonAndTrend(selectedImage, scanResult.scanId)
-    } else {
-      setComparison(null)
-      setTrend([])
-    }
-  }, [scanResult?.scanId, selectedImage])
-
-  async function fetchComparisonAndTrend(image, scanId) {
-    setLoadingComparison(true)
-    try {
-      const [compRes, trendRes] = await Promise.allSettled([
-        api.get(`/api/security/images/${encodeURIComponent(image)}/compare?scanId=${scanId}`),
-        api.get(`/api/security/images/${encodeURIComponent(image)}/trend?limit=10`)
-      ])
-      
-      if (compRes.status === 'fulfilled') setComparison(compRes.value?.data || null)
-      if (trendRes.status === 'fulfilled') setTrend(compRes.value?.data ? (trendRes.value?.data || []) : [])
-    } finally {
-      setLoadingComparison(false)
-    }
-  }
-
-  // 1. Fetch available local images from Docker Engine + previously scanned images + containers
+  // Load initial data
   useEffect(() => {
     async function loadData() {
       try {
@@ -77,945 +69,626 @@ export default function Security() {
           api.get('/api/docker/images'),
           api.get('/api/security/trivy-status'),
           api.get('/api/security/scans?limit=100'),
-          api.get('/api/docker/containers')
+          api.get('/api/docker/containers'),
         ])
 
         const validImages = new Set()
 
-        // Add local Docker images
         if (imagesRes.status === 'fulfilled' && Array.isArray(imagesRes.value?.data)) {
           for (const img of imagesRes.value.data) {
             if (Array.isArray(img.repoTags)) {
               for (const tag of img.repoTags) {
-                if (tag !== '<none>:<none>') {
-                  validImages.add(tag)
-                }
+                if (tag !== '<none>:<none>') validImages.add(tag)
               }
             }
           }
         }
 
-        // Add images from scan history (so previously scanned images always appear)
         if (scansRes.status === 'fulfilled' && Array.isArray(scansRes.value?.data)) {
           for (const scan of scansRes.value.data) {
-            if (scan.image) {
-              validImages.add(scan.image)
-            }
+            if (scan.image) validImages.add(scan.image)
           }
         }
 
-        const imageList = Array.from(validImages).sort()
-        setLocalImages(imageList)
-        if (!selectedImage && imageList.length > 0) {
-          setSelectedImage(imageList[0])
+        const imgList = Array.from(validImages).sort()
+        setLocalImages(imgList)
+
+        if (!selectedImage && imgList.length > 0) {
+          setSelectedImage(imgList[0])
         }
 
-        if (statusRes.status === 'fulfilled' && statusRes.value?.data) {
-          setTrivyStatus({
-            checked: true,
-            installed: statusRes.value.data.installed,
-            version: statusRes.value.data.version || ''
-          })
+        if (statusRes.status === 'fulfilled') {
+          setTrivyStatus({ checked: true, ...statusRes.value?.data })
         }
 
-        // Store containers and pick first for policy evaluation
-        if (containersRes.status === 'fulfilled' && Array.isArray(containersRes.value?.data)) {
-          setContainers(containersRes.value.data)
-          if (containersRes.value.data.length > 0 && !selectedContainerId) {
-            setSelectedContainerId(containersRes.value.data[0].id)
+        if (containersRes.status === 'fulfilled') {
+          const contList = containersRes.value?.data || []
+          setContainers(contList)
+          if (contList.length > 0 && !selectedContainerId) {
+            setSelectedContainerId(contList[0].id)
           }
         }
-      } catch (err) {
-        console.error('Failed to load initial security data:', err)
+      } catch {
+        // Fallback silently
       }
     }
     loadData()
   }, [])
 
-  // Policy Evaluation Fetch
-  async function fetchContainerPolicy(containerId) {
-    if (!containerId) return
-    setLoadingPolicy(true)
-    setPolicyError(null)
-    try {
-      const res = await api.get(`/api/security/policies/${containerId}`)
-      if (res?.data) {
-        setPolicyData(res.data)
-      } else {
-        setPolicyData(null)
-      }
-    } catch (err) {
-      console.error('Failed to evaluate policy:', err)
-      setPolicyError(err.response?.data?.message || err.message || 'Failed to evaluate container security policies')
-      setPolicyData(null)
-    } finally {
-      setLoadingPolicy(false)
-    }
-  }
-
-  // Trigger policy evaluation when selected container changes
+  // Fetch scan history and comparison when image changes
   useEffect(() => {
-    if (selectedContainerId) {
-      fetchContainerPolicy(selectedContainerId)
+    if (!selectedImage) return
+
+    // Reset previous scan result and comparison immediately when target image changes
+    setScanResult(null)
+    setComparison(null)
+    setTrend([])
+    setError(null)
+
+    async function loadLatestForImage() {
+      try {
+        const res = await api.get(`/api/security/images/${encodeURIComponent(selectedImage)}/latest`)
+        if (res.data) {
+          setScanResult(res.data)
+        }
+      } catch {
+        setScanResult(null)
+      }
     }
-  }, [selectedContainerId])
 
-
-  // 2. Perform on-demand vulnerability scan
-  async function handleScan(imageToScan) {
-    const target = (imageToScan || selectedImage || '').trim()
-    if (!target) {
-      setError('Please select or specify a Docker image to scan.')
-      return
+    async function loadHistory() {
+      try {
+        const res = await api.get(`/api/security/images/${encodeURIComponent(selectedImage)}/history?limit=10`)
+        setScanHistory(res.data || [])
+      } catch {
+        setScanHistory([])
+      }
     }
 
+    loadLatestForImage()
+    loadHistory()
+  }, [selectedImage])
+
+  // Comparison & Trend — only run when the scanResult actually matches the currently selectedImage
+  useEffect(() => {
+    if (scanResult?.scanId && scanResult?.image === selectedImage) {
+      setLoadingComparison(true)
+      Promise.allSettled([
+        api.get(`/api/security/images/${encodeURIComponent(selectedImage)}/compare?scanId=${scanResult.scanId}`),
+        api.get(`/api/security/images/${encodeURIComponent(selectedImage)}/trend?limit=10`),
+      ]).then(([compRes, trendRes]) => {
+        if (compRes.status === 'fulfilled') setComparison(compRes.value?.data || null)
+        if (trendRes.status === 'fulfilled') {
+          const raw = trendRes.value?.data || []
+          setTrend(
+            raw.map((t) => ({
+              time: new Date(t.timestamp).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+              critical: t.critical,
+              high: t.high,
+              total: t.total,
+            }))
+          )
+        }
+        setLoadingComparison(false)
+      })
+    } else {
+      setComparison(null)
+      setTrend([])
+    }
+  }, [scanResult?.scanId, scanResult?.image, selectedImage])
+
+  // Trigger Trivy Scan with extended timeout (5 minutes)
+  async function handleScan() {
+    if (!selectedImage) return
     setScanning(true)
     setError(null)
 
     try {
-      // Trivy scan might take 20s - 2min, override default 10s Axios timeout
-      const res = await api.post('/api/security/scan', { image: target }, { timeout: 190000 })
-      if (res?.data) {
-        setScanResult(res.data)
-        // Refresh history after a successful scan
-        fetchImageHistory(target)
-      } else if (res?.success) {
-        setScanResult(res)
-        fetchImageHistory(target)
-      } else {
-        throw new Error('No scan data returned from server')
-      }
+      const res = await api.post('/api/security/scan', { image: selectedImage }, { timeout: 300000 })
+      setScanResult(res.data)
+      const histRes = await api.get(`/api/security/images/${encodeURIComponent(selectedImage)}/history?limit=10`)
+      setScanHistory(histRes.data || [])
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Vulnerability scan failed'
-      setError(msg)
+      if (err.response?.status === 409) {
+        setError('A vulnerability scan is currently processing for this image in the background. Retrying to load results...')
+        // Poll for results after 5s
+        setTimeout(async () => {
+          try {
+            const checkRes = await api.get(`/api/security/images/${encodeURIComponent(selectedImage)}/latest`)
+            if (checkRes.data) {
+              setScanResult(checkRes.data)
+              setError(null)
+            }
+          } catch {
+            // Still in progress
+          }
+        }, 5000)
+      } else {
+        setError(err.response?.data?.message || err.message || 'Trivy vulnerability scan failed')
+      }
     } finally {
       setScanning(false)
     }
   }
 
-  // Fetch history for an image
-  async function fetchImageHistory(image) {
-    if (!image) return;
-    setLoadingHistory(true);
-    try {
-      const historyRes = await api.get(`/api/security/images/${encodeURIComponent(image)}/history`);
-      setScanHistory(historyRes?.data || []);
-    } catch (err) {
-      console.error('Failed to load history', err);
-      setScanHistory([]);
-    } finally {
-      setLoadingHistory(false);
-    }
-  }
-
-  // Fetch latest scan data for an image
-  async function fetchLatestScan(image) {
-    if (!image) return;
-    try {
-      const latestRes = await api.get(`/api/security/images/${encodeURIComponent(image)}/latest`);
-      setScanResult(latestRes?.data || null);
-    } catch (err) {
-      setScanResult(null); // No scan exists yet
-    }
-  }
-
-  // Load history and latest scan when selected image changes
+  // Fetch Policy Evaluation for Container (Correct Route: /api/security/policies/:containerId)
   useEffect(() => {
-    if (selectedImage && !scanning) {
-      fetchImageHistory(selectedImage);
-      fetchLatestScan(selectedImage);
-    }
-  }, [selectedImage]);
+    if (activeTab === 'policies' && selectedContainerId) {
+      setLoadingPolicy(true)
+      setPolicyError(null)
 
-  // Fetch specific historical scan
-  async function handleSelectHistoryScan(scanId) {
-    try {
-      const res = await api.get(`/api/security/scans/${scanId}`);
-      if (res?.data) {
-        setScanResult(res.data);
-      }
-    } catch (err) {
-      console.error('Failed to load historical scan', err);
-      setError('Failed to load the selected historical scan.');
+      api.get(`/api/security/policies/${selectedContainerId}`)
+        .then((res) => {
+          setPolicyData(res.data)
+        })
+        .catch((err) => {
+          setPolicyError(err.response?.data?.message || 'Failed to evaluate container policies')
+          setPolicyData(null)
+        })
+        .finally(() => setLoadingPolicy(false))
     }
-  }
-
-  // Auto-trigger load (or scan) if navigated with an image in state
-  useEffect(() => {
-    if (location.state?.image) {
-      setSelectedImage(location.state.image)
-      // We don't auto-scan here anymore to save resources. 
-      // The `selectedImage` effect will automatically fetch its history and latest scan instead.
-    }
-  }, [location.state])
+  }, [activeTab, selectedContainerId])
 
   // Filter vulnerabilities
-  const allVulns = scanResult?.vulnerabilities || [];
-  let renderTargetVulns = allVulns;
-  let isSpecialFilter = false;
+  const vulnerabilities = scanResult?.vulnerabilities || []
+  const filteredVulns = vulnerabilities.filter((v) => {
+    const matchesFilter =
+      activeFilter === 'All' ||
+      v.severity?.toUpperCase() === activeFilter.toUpperCase()
 
-  if (activeFilter === 'NEW' && comparison) {
-    renderTargetVulns = comparison.newVulnerabilities || [];
-    isSpecialFilter = true;
-  } else if (activeFilter === 'FIXED' && comparison) {
-    renderTargetVulns = comparison.fixedVulnerabilities || [];
-    isSpecialFilter = true;
-  } else if (activeFilter === 'CHANGED' && comparison) {
-    renderTargetVulns = comparison.severityChanges || [];
-    isSpecialFilter = true;
-  }
+    const q = search.toLowerCase()
+    const matchesSearch =
+      !search ||
+      v.vulnerabilityId?.toLowerCase().includes(q) ||
+      v.packageName?.toLowerCase().includes(q) ||
+      v.description?.toLowerCase().includes(q)
 
-  const filteredVulns = renderTargetVulns.filter((v) => {
-    if (!isSpecialFilter) {
-      // Tab filter for standard view
-      if (activeFilter === 'CRITICAL' && v.severity !== 'CRITICAL') return false
-      if (activeFilter === 'HIGH' && v.severity !== 'HIGH') return false
-      if (activeFilter === 'MEDIUM' && v.severity !== 'MEDIUM') return false
-      if (activeFilter === 'LOW' && v.severity !== 'LOW') return false
-      if (activeFilter === 'Fixable' && (!v.fixedVersion || v.fixedVersion === 'Not fixed')) return false
-    }
-
-    // Search query
-    if (search) {
-      const q = search.toLowerCase()
-      const cveMatch = v.vulnerabilityId?.toLowerCase().includes(q)
-      const pkgMatch = v.packageName?.toLowerCase().includes(q)
-      const titleMatch = (v.title || '').toLowerCase().includes(q)
-      if (!cveMatch && !pkgMatch && !titleMatch) return false
-    }
-
-    return true
+    return matchesFilter && matchesSearch
   })
-
-  // Security Posture Calculation
-  const summary = scanResult?.summary || { critical: 0, high: 0, medium: 0, low: 0, unknown: 0 }
-  const totalCVEs = scanResult?.totalVulnerabilities || 0
-
-  let grade = '—'
-  let gradeColor = 'text-text-muted'
-  if (scanResult) {
-    if (summary.critical === 0 && summary.high === 0 && summary.medium === 0) {
-      grade = 'A'
-      gradeColor = 'text-status-success'
-    } else if (summary.critical === 0 && summary.high <= 2) {
-      grade = 'B'
-      gradeColor = 'text-severity-medium'
-    } else if (summary.critical === 0) {
-      grade = 'C'
-      gradeColor = 'text-severity-high'
-    } else {
-      grade = 'F'
-      gradeColor = 'text-severity-critical'
-    }
-  }
-
-  function renderDelta(val) {
-    if (val > 0) return <span className="text-severity-critical font-bold text-[11px] flex items-center"><TrendingUp size={12} className="mr-0.5" /> +{val} (Increased)</span>
-    if (val < 0) return <span className="text-status-success font-bold text-[11px] flex items-center"><TrendingDown size={12} className="mr-0.5" /> {val} (Decreased)</span>
-    return <span className="text-text-muted font-bold text-[11px] flex items-center"><Minus size={12} className="mr-0.5" /> Unchanged</span>
-  }
 
   return (
     <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-text-muted">
-            Vulnerability Management
-          </p>
-          <div className="flex items-center gap-3 mt-1">
-            <h1 className="text-2xl font-bold text-text-primary">Security Center</h1>
-            {scanResult && (
-              <span className={`rounded px-2 py-0.5 text-[11px] font-bold text-white ${
-                summary.critical > 0 ? 'bg-severity-critical' : 'bg-status-success'
-              }`}>
-                {summary.critical} Critical CVEs
-              </span>
-            )}
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-[#F3F5F7]">Security Center</h1>
+            <div className="flex items-center gap-1.5 rounded-md border border-white/5 bg-[#11161F] px-2 py-0.5 font-mono text-[11px] text-[#A7B0BE]">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  trivyStatus.installed ? 'bg-[#36D6B4] shadow-[0_0_6px_#36D6B4]' : 'bg-[#FF5C70]'
+                }`}
+              />
+              <span>Trivy {trivyStatus.installed ? (trivyStatus.version || 'Active') : 'Offline'}</span>
+            </div>
           </div>
-          <p className="mt-1 text-[13px] text-text-secondary">
-            On-demand container image vulnerability scanning powered by Aqua Security Trivy.
+          <p className="mt-1 text-[13px] text-[#A7B0BE]">
+            Container image vulnerability analysis, CVE tracking, and security policy compliance.
           </p>
         </div>
 
-        {/* Engine status indicator */}
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-surface px-3 py-1.5 text-[11px] text-text-secondary">
-            <Shield size={13} className={trivyStatus.installed ? "text-status-success" : "text-severity-medium"} />
-            <span>
-              Engine: <strong className="text-text-primary">Trivy</strong>
-              {trivyStatus.installed ? ` (Ready)` : ` (Checking...)`}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* Sub-Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-border-primary pb-1">
-        <button
-          onClick={() => setActiveTab('vulnerabilities')}
-          className={`flex items-center gap-2 px-4 py-2 text-[13px] font-semibold rounded-t-lg transition border-b-2 -mb-[5px] ${
-            activeTab === 'vulnerabilities'
-              ? 'border-accent-primary text-accent-primary bg-bg-surface/50'
-              : 'border-transparent text-text-secondary hover:text-text-primary hover:bg-bg-hover'
-          }`}
-        >
-          <Shield size={15} />
-          <span>Vulnerability Scans & Trends</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('policies')}
-          className={`flex items-center gap-2 px-4 py-2 text-[13px] font-semibold rounded-t-lg transition border-b-2 -mb-[5px] ${
-            activeTab === 'policies'
-              ? 'border-accent-primary text-accent-primary bg-bg-surface/50'
-              : 'border-transparent text-text-secondary hover:text-text-primary hover:bg-bg-hover'
-          }`}
-        >
-          <CheckCircle2 size={15} />
-          <span>Security Policy Engine</span>
-          {policyData && (
-            <span className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-              policyData.score >= 80
-                ? 'bg-status-success/20 text-status-success'
-                : policyData.score >= 50
-                ? 'bg-severity-medium/20 text-severity-medium'
-                : 'bg-status-danger/20 text-status-danger'
-            }`}>
-              Score: {policyData.score}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {activeTab === 'vulnerabilities' && (
-        <>
-      {/* Image Scan Control Bar */}
-      <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex items-center gap-3 w-full md:w-auto flex-1">
-          <label className="text-[12px] font-semibold text-text-secondary whitespace-nowrap">
-            Target Image:
-          </label>
-          <div className="relative flex-1 max-w-md">
-            <input
-              type="text"
-              list="local-images-list"
-              value={selectedImage}
-              onChange={(e) => setSelectedImage(e.target.value)}
-              placeholder="e.g. nginx:alpine or postgres:16"
-              disabled={scanning}
-              className="w-full rounded-lg border border-border-secondary bg-bg-primary px-3 py-2 text-[13px] text-text-primary placeholder-text-muted focus:border-accent-primary focus:outline-none"
-            />
-            <datalist id="local-images-list">
-              {localImages.map((img) => (
-                <option key={img} value={img} />
-              ))}
-            </datalist>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        {/* Tab Toggle: Vulnerability Scans vs Policy Engine */}
+        <div className="flex items-center gap-1 rounded-lg border border-white/[0.08] bg-[#11161F] p-1">
           <button
-            onClick={() => handleScan(selectedImage)}
-            disabled={scanning || !selectedImage.trim()}
-            className="flex items-center justify-center gap-2 rounded-lg bg-accent-primary px-5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed w-full md:w-auto"
+            onClick={() => setActiveTab('vulnerabilities')}
+            className={`rounded-md px-3 py-1 font-medium text-[12px] transition ${
+              activeTab === 'vulnerabilities'
+                ? 'bg-[#151B24] text-[#36D6B4] shadow-sm'
+                : 'text-[#A7B0BE] hover:text-[#F3F5F7]'
+            }`}
           >
-            {scanning ? (
-              <>
-                <RefreshCw size={14} className="animate-spin" />
-                <span>Scanning Image...</span>
-              </>
-            ) : (
-              <>
-                <Scan size={14} />
-                <span>Scan Image</span>
-              </>
-            )}
+            Vulnerability Scans
+          </button>
+          <button
+            onClick={() => setActiveTab('policies')}
+            className={`rounded-md px-3 py-1 font-medium text-[12px] transition ${
+              activeTab === 'policies'
+                ? 'bg-[#151B24] text-[#36D6B4] shadow-sm'
+                : 'text-[#A7B0BE] hover:text-[#F3F5F7]'
+            }`}
+          >
+            Security Policy Engine
           </button>
         </div>
       </div>
 
-      {/* Error Banner */}
-      {error && (
-        <div className="flex items-start gap-3 rounded-lg border border-status-error/30 bg-status-error/10 p-3.5 text-[13px] text-status-error">
-          <AlertCircle size={16} className="mt-0.5 shrink-0" />
-          <div className="space-y-1">
-            <p className="font-semibold">Scan Error</p>
-            <p className="text-[12px] opacity-90">{error}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Scanning In-Flight Notification */}
-      {scanning && (
-        <div className="flex items-center gap-3 rounded-xl border border-accent-primary/30 bg-accent-primary/5 p-4 text-[13px] text-accent-primary">
-          <RefreshCw size={18} className="animate-spin shrink-0" />
-          <div>
-            <p className="font-semibold">Trivy vulnerability scan in progress for {selectedImage}</p>
-            <p className="text-[11px] text-text-muted mt-0.5">
-              Analyzing OS packages, shared libraries, and dependencies against known CVE databases.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Summary Score Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-        {/* Overall Posture */}
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">Security Grade</p>
-            <Shield size={14} className="text-text-muted" />
-          </div>
-          <div className="my-2">
-            <span className={`text-4xl font-extrabold ${gradeColor}`}>{grade}</span>
-          </div>
-          <p className="text-[11px] text-text-muted truncate">
-            {scanResult ? scanResult.image : 'No image scanned'}
-          </p>
-        </div>
-
-        {/* Critical */}
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-severity-critical">Critical</p>
-            <span className="h-2 w-2 rounded-full bg-severity-critical" />
-          </div>
-          <p className="text-3xl font-bold text-severity-critical my-1">{summary.critical}</p>
-          <p className="text-[10px] text-text-muted">Requires immediate fix</p>
-        </div>
-
-        {/* High */}
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-severity-high">High</p>
-            <span className="h-2 w-2 rounded-full bg-severity-high" />
-          </div>
-          <p className="text-3xl font-bold text-severity-high my-1">{summary.high}</p>
-          <p className="text-[10px] text-text-muted">High priority patch</p>
-        </div>
-
-        {/* Medium */}
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-severity-medium">Medium</p>
-            <span className="h-2 w-2 rounded-full bg-severity-medium" />
-          </div>
-          <p className="text-3xl font-bold text-severity-medium my-1">{summary.medium}</p>
-          <p className="text-[10px] text-text-muted">Moderate impact</p>
-        </div>
-
-        {/* Low & Unknown */}
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-severity-low">Low / Other</p>
-            <span className="h-2 w-2 rounded-full bg-severity-low" />
-          </div>
-          <p className="text-3xl font-bold text-text-primary my-1">{summary.low + summary.unknown}</p>
-          <p className="text-[10px] text-text-muted">Low severity / unknown</p>
-        </div>
-      </div>
-
-      {/* Scan History Bar */}
-      {scanHistory.length > 0 && (
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-4">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-[12px] font-bold text-text-primary">Scan History</p>
-            {loadingHistory && <RefreshCw size={12} className="animate-spin text-text-muted" />}
-          </div>
-          <div className="flex gap-3 overflow-x-auto pb-2">
-            {scanHistory.map((hist) => {
-              const isSelected = scanResult?.scanId === hist.id;
-              return (
-                <button
-                  key={hist.id}
-                  onClick={() => handleSelectHistoryScan(hist.id)}
-                  className={`flex-shrink-0 flex flex-col items-start rounded-lg border p-3 text-left transition ${
-                    isSelected 
-                      ? 'border-accent-primary bg-accent-primary/10' 
-                      : 'border-border-secondary bg-bg-primary hover:bg-bg-hover'
-                  }`}
-                >
-                  <span className="text-[11px] font-semibold text-text-primary whitespace-nowrap">
-                    {new Date(hist.scanTimestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
-                  </span>
-                  <div className="flex items-center gap-2 mt-1 text-[10px] font-mono text-text-muted">
-                    <span className="text-severity-critical">C:{hist.criticalCount}</span>
-                    <span className="text-severity-high">H:{hist.highCount}</span>
-                    <span className="text-severity-medium">M:{hist.mediumCount}</span>
-                    <span className="text-severity-low">L:{hist.lowCount}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* Comparison & Trend Section */}
-      {comparison && comparison.comparisonAvailable && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          
-          {/* Trend Chart */}
-          <div className="rounded-xl border border-border-primary bg-bg-surface p-5">
-            <h3 className="text-[12px] font-bold text-text-primary uppercase tracking-wider mb-4">Severity Trend (Last 10 Scans)</h3>
-            <div className="h-48 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={trend} margin={{ top: 5, right: 10, left: -25, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
-                  <XAxis dataKey="timestamp" tickFormatter={(t) => new Date(t).toLocaleDateString(undefined, {month:'short', day:'numeric'})} stroke="#ffffff40" fontSize={10} />
-                  <YAxis stroke="#ffffff40" fontSize={10} />
-                  <Tooltip 
-                    contentStyle={{ backgroundColor: '#1A1C23', borderColor: '#2E323D', fontSize: '11px', borderRadius: '8px' }}
-                    labelFormatter={(t) => new Date(t).toLocaleString()}
-                  />
-                  <Line type="monotone" dataKey="critical" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                  <Line type="monotone" dataKey="high" stroke="#f97316" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="medium" stroke="#eab308" strokeWidth={2} dot={{ r: 3 }} />
-                  <Line type="monotone" dataKey="low" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          {/* Comparison Summary */}
-          <div className="rounded-xl border border-border-primary bg-bg-surface p-5 flex flex-col">
-            <h3 className="text-[12px] font-bold text-text-primary uppercase tracking-wider mb-4 flex justify-between">
-              <span>Scan Comparison</span>
-              <span className="text-[10px] text-text-muted normal-case font-normal">Compared to previous scan</span>
-            </h3>
-            
-            <div className="grid grid-cols-4 gap-4 mb-5">
-              <div>
-                <p className="text-[10px] text-text-muted mb-1">Critical</p>
-                {renderDelta(comparison.summary.criticalDelta)}
-              </div>
-              <div>
-                <p className="text-[10px] text-text-muted mb-1">High</p>
-                {renderDelta(comparison.summary.highDelta)}
-              </div>
-              <div>
-                <p className="text-[10px] text-text-muted mb-1">Medium</p>
-                {renderDelta(comparison.summary.mediumDelta)}
-              </div>
-              <div>
-                <p className="text-[10px] text-text-muted mb-1">Low</p>
-                {renderDelta(comparison.summary.lowDelta)}
-              </div>
+      {/* ========================================================================= */}
+      {/* SECTION 1: VULNERABILITY SCANS (TRIVY) */}
+      {/* ========================================================================= */}
+      {activeTab === 'vulnerabilities' && (
+        <div className="space-y-5">
+          {/* Target Selector & Scan Action Bar */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#11161F] p-3">
+            <div className="flex flex-1 items-center gap-3">
+              <span className="font-mono text-[11px] text-[#697384] uppercase">Target Image:</span>
+              <select
+                value={selectedImage}
+                onChange={(e) => setSelectedImage(e.target.value)}
+                disabled={scanning}
+                className="flex-1 max-w-md h-9 rounded-lg border border-white/[0.08] bg-[#0D1118] px-3 font-mono text-[12px] text-[#F3F5F7] outline-none focus:border-[#36D6B4]/50"
+              >
+                {localImages.map((img) => (
+                  <option key={img} value={img}>
+                    {img}
+                  </option>
+                ))}
+              </select>
             </div>
 
-            <div className="grid grid-cols-3 gap-3 mt-auto">
-              <div className="rounded border border-border-secondary bg-bg-primary p-3">
-                <p className="text-[10px] font-bold text-text-muted uppercase">New Findings</p>
-                <p className={`text-xl font-bold mt-1 ${comparison.summary.newCount > 0 ? 'text-severity-critical' : 'text-text-primary'}`}>{comparison.summary.newCount}</p>
-              </div>
-              <div className="rounded border border-border-secondary bg-bg-primary p-3">
-                <p className="text-[10px] font-bold text-text-muted uppercase">Fixed</p>
-                <p className={`text-xl font-bold mt-1 ${comparison.summary.fixedCount > 0 ? 'text-status-success' : 'text-text-primary'}`}>{comparison.summary.fixedCount}</p>
-              </div>
-              <div className="rounded border border-border-secondary bg-bg-primary p-3">
-                <p className="text-[10px] font-bold text-text-muted uppercase">Severity Changed</p>
-                <p className="text-xl font-bold mt-1 text-text-primary">{comparison.summary.severityChangedCount}</p>
-              </div>
+            <button
+              onClick={handleScan}
+              disabled={scanning || !selectedImage}
+              className="flex items-center justify-center gap-2 rounded-lg bg-[#36D6B4] px-4 py-2 text-[12px] font-semibold text-[#080B10] shadow-[0_0_15px_rgba(54,214,180,0.25)] hover:bg-[#4DE1C1] disabled:opacity-50 transition"
+            >
+              {scanning ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  <span>Scanning Image...</span>
+                </>
+              ) : (
+                <>
+                  <Scan size={14} />
+                  <span>Trigger Vulnerability Scan</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Error Banner */}
+          {error && (
+            <div className="rounded-xl border border-[#FF5C70]/30 bg-[#FF5C70]/10 p-4 text-[12px] text-[#FF5C70] flex items-center gap-2">
+              <AlertCircle size={16} />
+              <span>{error}</span>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Vulnerability Table Card */}
-      <div className="rounded-xl border border-border-primary bg-bg-surface overflow-hidden">
-        {/* Filter bar & Search */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-border-primary px-5 py-3">
-          {/* Tabs */}
-          <div className="flex items-center gap-2 overflow-x-auto w-full sm:w-auto">
-            {[
-              { label: 'All', count: totalCVEs },
-              { label: 'CRITICAL', count: summary.critical, dot: 'bg-severity-critical' },
-              { label: 'HIGH', count: summary.high, dot: 'bg-severity-high' },
-              { label: 'MEDIUM', count: summary.medium, dot: 'bg-severity-medium' },
-              { label: 'LOW', count: summary.low, dot: 'bg-severity-low' },
-              { label: 'Fixable', count: allVulns.filter(v => v.fixedVersion && v.fixedVersion !== 'Not fixed').length },
-            ].map((tab) => {
-              const active = activeFilter === tab.label
-              return (
-                <button
-                  key={tab.label}
-                  onClick={() => setActiveFilter(tab.label)}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] font-medium transition ${
-                    active
-                      ? 'bg-bg-hover text-text-primary border border-border-secondary'
-                      : 'text-text-muted hover:text-text-secondary hover:bg-bg-hover/50'
-                  }`}
-                >
-                  {tab.dot && <span className={`h-1.5 w-1.5 rounded-full ${tab.dot}`} />}
-                  <span>{tab.label}</span>
-                  <span className="rounded bg-bg-tertiary px-1 py-0.2 text-[10px] text-text-muted font-mono">
-                    {tab.count}
-                  </span>
-                </button>
-              )
-            })}
-            
-            {/* Added comparison filter tabs if available */}
-            {comparison && comparison.comparisonAvailable && (
-              <>
-                <div className="w-px h-4 bg-border-primary mx-1"></div>
-                <button
-                  onClick={() => setActiveFilter('NEW')}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] font-medium transition ${activeFilter === 'NEW' ? 'bg-severity-critical/20 text-severity-critical border border-severity-critical/30' : 'text-severity-critical/70 hover:bg-severity-critical/10'}`}
-                >
-                  <span>New</span><span className="rounded bg-bg-tertiary px-1 text-[10px]">{comparison.summary.newCount}</span>
-                </button>
-                <button
-                  onClick={() => setActiveFilter('FIXED')}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] font-medium transition ${activeFilter === 'FIXED' ? 'bg-status-success/20 text-status-success border border-status-success/30' : 'text-status-success/70 hover:bg-status-success/10'}`}
-                >
-                  <span>Fixed</span><span className="rounded bg-bg-tertiary px-1 text-[10px]">{comparison.summary.fixedCount}</span>
-                </button>
-                <button
-                  onClick={() => setActiveFilter('CHANGED')}
-                  className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[12px] font-medium transition ${activeFilter === 'CHANGED' ? 'bg-accent-primary/20 text-accent-primary border border-accent-primary/30' : 'text-accent-primary/70 hover:bg-accent-primary/10'}`}
-                >
-                  <span>Severity Changed</span><span className="rounded bg-bg-tertiary px-1 text-[10px]">{comparison.summary.severityChangedCount}</span>
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Search box */}
-          {allVulns.length > 0 && (
-            <SearchInput
-              placeholder="Search CVE, package, or title..."
-              value={search}
-              onChange={setSearch}
-              className="w-full sm:w-64"
-            />
           )}
-        </div>
 
-        {/* Table header */}
-        <div className="grid grid-cols-[100px_160px_160px_110px_110px_1fr] gap-3 items-center px-5 py-2.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted border-b border-border-primary bg-bg-surface">
-          <span>Severity</span>
-          <span>CVE Identifier</span>
-          <span>Package</span>
-          <span>Installed</span>
-          <span>Fixed In</span>
-          <span>Title / Description</span>
-        </div>
+          {/* KPI Severity Stat Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="rounded-xl border border-[#FF5C70]/20 bg-[#11161F] p-4">
+              <div className="flex items-center justify-between font-mono text-[11px] text-[#697384]">
+                <span>CRITICAL</span>
+                <span className="h-2 w-2 rounded-full bg-[#FF5C70] shadow-[0_0_6px_#FF5C70]" />
+              </div>
+              <div className="mt-2 text-3xl font-bold font-mono text-[#FF5C70]">
+                {scanResult?.summary?.critical ?? 0}
+              </div>
+              <div className="mt-1 text-[11px] text-[#697384]">Direct exploitation risk</div>
+            </div>
 
-        {/* Empty States */}
-        {!scanResult && !scanning && (
-          <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-            <Shield size={36} className="text-text-muted mb-3" strokeWidth={1.2} />
-            <p className="text-[14px] font-medium text-text-primary">No Scan Performed Yet</p>
-            <p className="mt-1 text-[12px] text-text-muted max-w-md">
-              Select a local Docker image above and click <strong>"Scan Image"</strong> to run an on-demand vulnerability scan using Trivy.
-            </p>
+            <div className="rounded-xl border border-[#FF9B54]/20 bg-[#11161F] p-4">
+              <div className="flex items-center justify-between font-mono text-[11px] text-[#697384]">
+                <span>HIGH</span>
+                <span className="h-2 w-2 rounded-full bg-[#FF9B54]" />
+              </div>
+              <div className="mt-2 text-3xl font-bold font-mono text-[#FF9B54]">
+                {scanResult?.summary?.high ?? 0}
+              </div>
+              <div className="mt-1 text-[11px] text-[#697384]">Elevation of privilege</div>
+            </div>
+
+            <div className="rounded-xl border border-[#F2C94C]/20 bg-[#11161F] p-4">
+              <div className="flex items-center justify-between font-mono text-[11px] text-[#697384]">
+                <span>MEDIUM</span>
+                <span className="h-2 w-2 rounded-full bg-[#F2C94C]" />
+              </div>
+              <div className="mt-2 text-3xl font-bold font-mono text-[#F2C94C]">
+                {scanResult?.summary?.medium ?? 0}
+              </div>
+              <div className="mt-1 text-[11px] text-[#697384]">Denial of service/leak</div>
+            </div>
+
+            <div className="rounded-xl border border-white/[0.07] bg-[#11161F] p-4">
+              <div className="flex items-center justify-between font-mono text-[11px] text-[#697384]">
+                <span>TOTAL VULNERABILITIES</span>
+                <span className="h-2 w-2 rounded-full bg-[#36D6B4]" />
+              </div>
+              <div className="mt-2 text-3xl font-bold font-mono text-[#F3F5F7]">
+                {scanResult?.totalVulnerabilities ?? 0}
+              </div>
+              <div className="mt-1 text-[11px] text-[#697384]">
+                {scanResult ? new Date(scanResult.scanTimestamp).toLocaleString() : 'No scan records'}
+              </div>
+            </div>
           </div>
-        )}
 
-        {scanResult && filteredVulns.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center px-4">
-            <CheckCircle2 size={32} className="text-status-success mb-2" />
-            <p className="text-[14px] font-medium text-text-primary">No Vulnerabilities Matching Filter</p>
-            <p className="mt-1 text-[12px] text-text-muted">
-              {allVulns.length === 0
-                ? `Great news! Trivy found 0 vulnerabilities in ${scanResult.image}.`
-                : 'Try adjusting your search query or filter tab.'}
-            </p>
+          {/* Historical Vulnerability Trend */}
+          {trend.length > 1 && (
+            <div className="rounded-xl border border-white/[0.07] bg-[#11161F] p-4">
+              <div className="flex items-center justify-between border-b border-white/[0.06] pb-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp size={14} className="text-[#36D6B4]" />
+                  <h2 className="text-[13px] font-semibold text-[#F3F5F7]">Vulnerability Trajectory</h2>
+                </div>
+                <span className="font-mono text-[10px] text-[#697384]">Historical Scans</span>
+              </div>
+              <div className="h-44 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={trend} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                    <XAxis dataKey="time" tick={{ fill: '#697384', fontSize: 10, fontFamily: 'monospace' }} />
+                    <YAxis tick={{ fill: '#697384', fontSize: 10, fontFamily: 'monospace' }} />
+                    <Tooltip content={<ChartTooltip />} />
+                    <Line type="monotone" dataKey="critical" name="Critical" stroke="#FF5C70" strokeWidth={1.8} dot={false} />
+                    <Line type="monotone" dataKey="high" name="High" stroke="#FF9B54" strokeWidth={1.8} dot={false} />
+                    <Line type="monotone" dataKey="total" name="Total" stroke="#36D6B4" strokeWidth={1.8} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Vulnerability Table Controls */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#11161F] p-2.5">
+            {/* Filter Pills */}
+            <div className="flex items-center gap-1">
+              {['All', 'Critical', 'High', 'Medium', 'Low'].map((sev) => (
+                <button
+                  key={sev}
+                  onClick={() => setActiveFilter(sev)}
+                  className={`rounded-md px-3 py-1 font-mono text-[11px] transition ${
+                    activeFilter === sev
+                      ? 'bg-[#151B24] text-[#36D6B4] font-semibold shadow-sm'
+                      : 'text-[#A7B0BE] hover:text-[#F3F5F7]'
+                  }`}
+                >
+                  {sev}
+                </button>
+              ))}
+            </div>
+
+            {/* Search Input */}
+            <div className="w-full sm:w-72">
+              <SearchInput
+                placeholder="Search CVE, package, or description..."
+                value={search}
+                onChange={setSearch}
+              />
+            </div>
           </div>
-        )}
 
-        {/* Vulnerability rows */}
-        {filteredVulns.map((vuln, idx) => (
-          <div
-            key={`${vuln.vulnerabilityId}-${vuln.packageName}-${idx}`}
-            className="grid grid-cols-[100px_160px_160px_110px_110px_1fr] gap-3 items-center px-5 py-3 border-b border-border-primary last:border-b-0 text-[12px] hover:bg-bg-hover transition"
-          >
-            <div>
-              {activeFilter === 'CHANGED' ? (
-                <div className="flex flex-col gap-1">
-                  <div className="flex items-center gap-1 opacity-50 line-through"><SeverityBadge severity={vuln.previousSeverity} /></div>
-                  <div className="flex items-center gap-1"><SeverityBadge severity={vuln.currentSeverity} /></div>
+          {/* Vulnerability Findings Table */}
+          <div className="rounded-xl border border-white/[0.07] bg-[#11161F] overflow-hidden">
+            <div className="grid grid-cols-[90px_140px_1.5fr_100px_100px_40px] gap-3 px-5 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#697384] border-b border-white/[0.06] bg-[#0D1118]">
+              <span>Severity</span>
+              <span>CVE ID</span>
+              <span>Package & Target</span>
+              <span>Installed</span>
+              <span>Fixed In</span>
+              <span className="text-right">Info</span>
+            </div>
+
+            <div className="divide-y divide-white/[0.04]">
+              {filteredVulns.length === 0 ? (
+                <div className="py-16 text-center text-[#697384] font-mono text-[12px]">
+                  {scanResult
+                    ? 'No vulnerabilities matched the current filter.'
+                    : 'Select a container image and click "Trigger Vulnerability Scan" to begin analysis.'}
                 </div>
               ) : (
-                <SeverityBadge severity={vuln.severity || vuln.currentSeverity} />
+                filteredVulns.map((v) => {
+                  const isExpanded = expandedCve === v.vulnerabilityId
+                  return (
+                    <div key={v.vulnerabilityId + v.packageName} className="transition-colors">
+                      <div
+                        onClick={() => setExpandedCve(isExpanded ? null : v.vulnerabilityId)}
+                        className="grid grid-cols-[90px_140px_1.5fr_100px_100px_40px] gap-3 items-center px-5 py-3 text-[12px] cursor-pointer hover:bg-[#151B24]"
+                      >
+                        <div>
+                          <SeverityBadge severity={v.severity} size="sm" />
+                        </div>
+                        <div className="font-mono text-[11px] font-semibold text-[#F3F5F7]">
+                          {v.vulnerabilityId}
+                        </div>
+                        <div className="min-w-0">
+                          <span className="font-semibold text-[#F3F5F7]">{v.packageName}</span>
+                          {v.target && (
+                            <span className="ml-2 font-mono text-[10px] text-[#697384] truncate">
+                              ({v.target})
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-mono text-[11px] text-[#FF5C70]">
+                          {v.installedVersion || '—'}
+                        </div>
+                        <div className="font-mono text-[11px] text-[#35D399]">
+                          {v.fixedVersion || 'No Fix'}
+                        </div>
+                        <div className="flex justify-end text-[#697384]">
+                          {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                        </div>
+                      </div>
+
+                      {/* Expandable Details */}
+                      {isExpanded && (
+                        <div className="bg-[#0D1118] px-5 py-3 border-t border-white/[0.04] text-[12px] space-y-2 animate-fade-in">
+                          <p className="text-[#A7B0BE] leading-relaxed">
+                            {v.description || 'No detailed CVE description provided by security database.'}
+                          </p>
+                          {v.primaryUrl && (
+                            <a
+                              href={v.primaryUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 font-mono text-[11px] text-[#36D6B4] hover:underline"
+                            >
+                              <span>Official Advisory & Proof-of-Concept</span>
+                              <ExternalLink size={11} />
+                            </a>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
               )}
             </div>
-
-            <div className="flex items-center gap-1.5 font-mono text-[12px] text-accent-primary font-medium truncate">
-              {vuln.primaryUrl ? (
-                <a
-                  href={vuln.primaryUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="hover:underline flex items-center gap-1 truncate"
-                  title="View CVE Details"
-                >
-                  <span className="truncate">{vuln.vulnerabilityId}</span>
-                  <ExternalLink size={11} className="shrink-0 opacity-70" />
-                </a>
-              ) : (
-                <span className="truncate">{vuln.vulnerabilityId}</span>
-              )}
-            </div>
-
-            <span className="font-mono text-[12px] text-text-primary truncate font-medium">
-              {vuln.packageName}
-            </span>
-
-            <span className="font-mono text-[11px] text-text-secondary truncate">
-              {vuln.installedVersion || '—'}
-            </span>
-
-            <span className="font-mono text-[11px] text-status-success truncate font-medium">
-              {vuln.fixedVersion || <span className="text-text-muted font-normal">Not fixed</span>}
-            </span>
-
-            <div className="truncate text-[12px] text-text-secondary" title={vuln.title || vuln.description || ''}>
-              {vuln.title || vuln.description || <span className="text-text-muted italic">No description</span>}
-            </div>
           </div>
-        ))}
-
-        {/* Footer info */}
-        {scanResult && (
-          <div className="flex items-center justify-between border-t border-border-primary px-5 py-2.5 text-[11px] text-text-muted bg-bg-surface">
-            <span>
-              Showing {filteredVulns.length} of {totalCVEs} detected CVEs
-            </span>
-            <span>
-              Scanned at: {new Date(scanResult.scanTimestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
-          </div>
-        )}
-      </div>
-      </>
+        </div>
       )}
 
-      {/* =================================================================== */}
-      {/* 2. SECURITY POLICY ENGINE VIEW                                      */}
-      {/* =================================================================== */}
+      {/* ========================================================================= */}
+      {/* SECTION 2: SECURITY POLICY ENGINE (CG001–CG006) */}
+      {/* ========================================================================= */}
       {activeTab === 'policies' && (
         <div className="space-y-5">
-          {/* Policy Engine Header & Target Container Control */}
-          <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col md:flex-row items-center justify-between gap-4">
-            <div className="flex items-center gap-3 w-full md:w-auto flex-1">
-              <label className="text-[12px] font-semibold text-text-secondary whitespace-nowrap">
-                Target Container:
-              </label>
-              <div className="relative flex-1 max-w-lg">
-                <select
-                  value={selectedContainerId}
-                  onChange={(e) => setSelectedContainerId(e.target.value)}
-                  disabled={loadingPolicy || containers.length === 0}
-                  className="w-full rounded-lg border border-border-secondary bg-bg-primary px-3 py-2 text-[13px] text-text-primary focus:border-accent-primary focus:outline-none"
-                >
-                  {containers.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.names?.[0] || c.id.slice(0, 12)} ({c.image}) — {c.state}
-                    </option>
-                  ))}
-                  {containers.length === 0 && (
-                    <option value="">No running containers detected</option>
-                  )}
-                </select>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-3 w-full md:w-auto">
-              <button
-                onClick={() => fetchContainerPolicy(selectedContainerId)}
-                disabled={loadingPolicy || !selectedContainerId}
-                className="flex items-center justify-center gap-2 rounded-lg bg-accent-primary px-5 py-2 text-[13px] font-semibold text-white shadow-sm transition hover:bg-accent-primary/90 disabled:opacity-50 disabled:cursor-not-allowed w-full md:w-auto"
+          {/* Target Container Selector */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 rounded-xl border border-white/[0.07] bg-[#11161F] p-3">
+            <div className="flex flex-1 items-center gap-3">
+              <span className="font-mono text-[11px] text-[#697384] uppercase">Target Container:</span>
+              <select
+                value={selectedContainerId}
+                onChange={(e) => setSelectedContainerId(e.target.value)}
+                className="flex-1 max-w-md h-9 rounded-lg border border-white/[0.08] bg-[#0D1118] px-3 font-mono text-[12px] text-[#F3F5F7] outline-none focus:border-[#36D6B4]/50"
               >
-                <RefreshCw size={14} className={loadingPolicy ? "animate-spin" : ""} />
-                <span>{loadingPolicy ? "Evaluating Policies..." : "Re-evaluate Policies"}</span>
-              </button>
+                {containers.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.names?.[0]?.replace(/^\//, '') || c.id.slice(0, 12)} ({c.state})
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
-          {/* Policy Error Banner */}
-          {policyError && (
-            <div className="flex items-center gap-2.5 rounded-xl border border-status-danger/30 bg-status-danger/10 px-4 py-3 text-[13px] text-status-danger">
-              <AlertCircle size={16} className="shrink-0" />
-              <span>{policyError}</span>
-            </div>
-          )}
-
-          {/* Policy Score & Statistics Cards */}
+          {/* Compliance Score Summary Card */}
           {policyData && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {/* Policy Score Card */}
-              <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-                  Policy Score
-                </p>
-                <div className="mt-2 flex items-baseline gap-2">
-                  <span className={`text-3xl font-extrabold ${
-                    policyData.score >= 80
-                      ? 'text-status-success'
-                      : policyData.score >= 50
-                      ? 'text-severity-medium'
-                      : 'text-severity-critical'
-                  }`}>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              {/* Score */}
+              <div className="rounded-xl border border-[#36D6B4]/30 bg-[#11161F] p-4 flex flex-col justify-between">
+                <span className="font-mono text-[11px] text-[#697384] uppercase">POLICY COMPLIANCE SCORE</span>
+                <div className="my-2 flex items-baseline gap-2">
+                  <span className="text-4xl font-extrabold font-mono text-[#36D6B4]">
                     {policyData.score}
                   </span>
-                  <span className="text-[13px] text-text-muted font-medium">/ 100</span>
+                  <span className="text-sm font-mono text-[#697384]">/ 100</span>
                 </div>
-                <p className="mt-1 text-[11px] text-text-muted">
-                  {policyData.score >= 80 ? 'Compliant (Low Risk)' : policyData.score >= 50 ? 'Needs Hardening' : 'High Risk'}
-                </p>
+                <ProgressBar value={policyData.score} max={100} size="sm" color="teal" />
               </div>
 
-              {/* Total Rules Card */}
-              <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-                  Rules Evaluated
-                </p>
-                <div className="mt-2 text-3xl font-extrabold text-text-primary">
-                  {policyData.summary.total}
+              {/* Rules Evaluated */}
+              <div className="rounded-xl border border-white/[0.07] bg-[#11161F] p-4">
+                <span className="font-mono text-[11px] text-[#697384] uppercase">RULES EVALUATED</span>
+                <div className="mt-2 text-3xl font-bold font-mono text-[#F3F5F7]">
+                  {policyData.findings?.length || 6}
                 </div>
-                <div className="mt-1 flex items-center gap-3 text-[11px]">
-                  <span className="text-status-success font-semibold flex items-center gap-1">
-                    <CheckCircle2 size={12} /> {policyData.summary.passed} Passed
-                  </span>
-                  <span className="text-severity-critical font-semibold flex items-center gap-1">
-                    <AlertCircle size={12} /> {policyData.summary.failed} Failed
-                  </span>
-                </div>
+                <span className="text-[11px] text-[#697384]">Standard CIS / CG001–CG006</span>
               </div>
 
-              {/* Failed Severity Breakdown */}
-              <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-                  Violations By Severity
-                </p>
-                <div className="mt-2 grid grid-cols-4 gap-1 text-center">
-                  <div className="rounded bg-severity-critical/10 p-1">
-                    <span className="text-[10px] text-severity-critical font-bold block">CRIT</span>
-                    <span className="text-[14px] font-extrabold text-severity-critical">{policyData.summary.critical}</span>
-                  </div>
-                  <div className="rounded bg-severity-high/10 p-1">
-                    <span className="text-[10px] text-severity-high font-bold block">HIGH</span>
-                    <span className="text-[14px] font-extrabold text-severity-high">{policyData.summary.high}</span>
-                  </div>
-                  <div className="rounded bg-severity-medium/10 p-1">
-                    <span className="text-[10px] text-severity-medium font-bold block">MED</span>
-                    <span className="text-[14px] font-extrabold text-severity-medium">{policyData.summary.medium}</span>
-                  </div>
-                  <div className="rounded bg-severity-low/10 p-1">
-                    <span className="text-[10px] text-severity-low font-bold block">LOW</span>
-                    <span className="text-[14px] font-extrabold text-severity-low">{policyData.summary.low}</span>
-                  </div>
+              {/* Passed */}
+              <div className="rounded-xl border border-[#35D399]/20 bg-[#11161F] p-4">
+                <span className="font-mono text-[11px] text-[#697384] uppercase">RULES PASSED</span>
+                <div className="mt-2 text-3xl font-bold font-mono text-[#35D399]">
+                  {policyData.summary?.passed ?? 0}
                 </div>
-                <p className="mt-1 text-[10px] text-text-muted text-center">
-                  Weighted penalty deductions
-                </p>
+                <span className="text-[11px] text-[#35D399]">✓ Hardening verified</span>
               </div>
 
-              {/* Evaluated Target Details */}
-              <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-col justify-between">
-                <p className="text-[11px] font-semibold uppercase tracking-wider text-text-muted">
-                  Inspected Container
-                </p>
-                <div className="mt-1">
-                  <p className="text-[13px] font-bold text-text-primary truncate" title={policyData.containerName}>
-                    {policyData.containerName}
-                  </p>
-                  <p className="text-[11px] font-mono text-accent-primary truncate mt-0.5">
-                    {policyData.image || 'No image specified'}
-                  </p>
+              {/* Failed */}
+              <div className="rounded-xl border border-[#FF5C70]/20 bg-[#11161F] p-4">
+                <span className="font-mono text-[11px] text-[#697384] uppercase">VIOLATIONS DETECTED</span>
+                <div className="mt-2 text-3xl font-bold font-mono text-[#FF5C70]">
+                  {policyData.summary?.failed ?? 0}
                 </div>
-                <p className="mt-1 text-[10px] font-mono text-text-muted truncate">
-                  ID: {policyData.containerId.slice(0, 12)}
-                </p>
+                <span className="text-[11px] text-[#FF5C70]">✗ Remediation required</span>
               </div>
             </div>
           )}
 
-          {/* Policy Findings List */}
-          {policyData && (
-            <div className="rounded-xl border border-border-primary bg-bg-surface overflow-hidden">
-              <div className="border-b border-border-primary px-5 py-3.5 flex items-center justify-between">
-                <div>
-                  <h2 className="text-[14px] font-bold text-text-primary">Policy Rule Findings</h2>
-                  <p className="text-[11px] text-text-secondary mt-0.5">
-                    Deterministic evaluation against security benchmarks CG001 through CG006.
-                  </p>
-                </div>
-                <span className="text-[11px] text-text-muted">
-                  {policyData.findings.length} Rules Executed
-                </span>
-              </div>
+          {/* Rule Breakdown Cards (CG001–CG006) */}
+          <div className="space-y-3">
+            <h2 className="text-[13px] font-semibold text-[#F3F5F7] font-mono uppercase tracking-wider">
+              Evaluated Policy Rules (CG001–CG006)
+            </h2>
 
-              <div className="divide-y divide-border-primary">
-                {policyData.findings.map((finding) => (
-                  <div key={finding.ruleId} className="p-5 hover:bg-bg-hover/50 transition">
-                    {/* Finding Header */}
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5">
-                        <span className="font-mono font-bold text-[12px] bg-bg-primary text-text-primary px-2.5 py-1 rounded border border-border-secondary">
-                          {finding.ruleId}
-                        </span>
-                        <span className="text-[14px] font-bold text-text-primary">
-                          {finding.ruleName}
-                        </span>
+            {loadingPolicy ? (
+              <div className="py-16 text-center text-[#697384] font-mono text-[12px]">
+                Evaluating Docker runtime security policies...
+              </div>
+            ) : policyError ? (
+              <div className="rounded-xl border border-[#FF5C70]/20 bg-[#FF5C70]/10 p-4 text-[12px] text-[#FF5C70]">
+                {policyError}
+              </div>
+            ) : (
+              policyData?.findings?.map((rule) => {
+                const isPassed = rule.status === 'PASS'
+                const isExpanded = expandedRule === rule.ruleId
+
+                return (
+                  <div
+                    key={rule.ruleId}
+                    className="rounded-xl border border-white/[0.07] bg-[#11161F] overflow-hidden transition-all"
+                  >
+                    <div
+                      onClick={() => setExpandedRule(isExpanded ? null : rule.ruleId)}
+                      className="flex items-center justify-between p-4 cursor-pointer hover:bg-[#151B24] transition-colors"
+                    >
+                      <div className="flex items-center gap-3.5 min-w-0">
+                        <div
+                          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${
+                            isPassed
+                              ? 'border-[#35D399]/20 bg-[#35D399]/10 text-[#35D399]'
+                              : 'border-[#FF5C70]/20 bg-[#FF5C70]/10 text-[#FF5C70]'
+                          }`}
+                        >
+                          {isPassed ? <Check size={16} /> : <XCircle size={16} />}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[11px] font-semibold text-[#36D6B4]">
+                              [{rule.ruleId}]
+                            </span>
+                            <span className="font-semibold text-[#F3F5F7] text-[13px] truncate">
+                              {rule.ruleName}
+                            </span>
+                          </div>
+                          <p className="mt-0.5 text-[12px] text-[#A7B0BE] truncate">
+                            {rule.message}
+                          </p>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <SeverityBadge severity={finding.severity} />
-                        {finding.status === 'PASS' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold bg-status-success/15 text-status-success border border-status-success/30">
-                            <CheckCircle2 size={12} /> PASS
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[11px] font-bold bg-status-danger/15 text-status-danger border border-status-danger/30">
-                            <AlertCircle size={12} /> FAIL
-                          </span>
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`rounded-md border px-2 py-0.5 font-mono text-[10px] font-bold ${
+                            isPassed
+                              ? 'border-[#35D399]/30 bg-[#35D399]/10 text-[#35D399]'
+                              : 'border-[#FF5C70]/30 bg-[#FF5C70]/10 text-[#FF5C70]'
+                          }`}
+                        >
+                          {rule.status}
+                        </span>
+                        {isExpanded ? <ChevronDown size={15} className="text-[#697384]" /> : <ChevronRight size={15} className="text-[#697384]" />}
+                      </div>
+                    </div>
+
+                    {/* Expandable Remediation & Evidence */}
+                    {isExpanded && (
+                      <div className="border-t border-white/[0.05] bg-[#0D1118] p-4 text-[12px] space-y-3 font-mono animate-fade-in">
+                        {rule.evidence && (
+                          <div>
+                            <span className="text-[#697384] text-[11px] block uppercase">Diagnostic Evidence:</span>
+                            <p className="mt-1 text-[#F3F5F7] bg-white/[0.02] p-2 rounded border border-white/5">
+                              {rule.evidence}
+                            </p>
+                          </div>
+                        )}
+                        {rule.recommendation && (
+                          <div>
+                            <span className="text-[#36D6B4] text-[11px] block uppercase">Security Recommendation:</span>
+                            <p className="mt-1 text-[#A7B0BE] bg-white/[0.02] p-2 rounded border border-white/5">
+                              {rule.recommendation}
+                            </p>
+                          </div>
                         )}
                       </div>
-                    </div>
-
-                    {/* Finding Message */}
-                    <p className="mt-2.5 text-[13px] text-text-secondary leading-relaxed">
-                      {finding.message}
-                    </p>
-
-                    {/* Evidence Callout */}
-                    <div className="mt-2.5 rounded-lg bg-bg-primary border border-border-secondary p-2.5 font-mono text-[11px] text-text-secondary">
-                      <span className="font-sans font-semibold text-text-muted mr-1.5 select-none">
-                        Evidence:
-                      </span>
-                      <span className="text-text-primary">{finding.evidence}</span>
-                    </div>
-
-                    {/* Recommendation */}
-                    <div className="mt-2.5 flex items-start gap-2 text-[12px] text-text-secondary">
-                      <Info size={14} className="text-accent-primary shrink-0 mt-0.5" />
-                      <span>
-                        <strong className="text-text-primary font-medium">Recommendation: </strong>
-                        {finding.recommendation}
-                      </span>
-                    </div>
+                    )}
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Empty State when no container is available */}
-          {!loadingPolicy && !policyData && !policyError && (
-            <div className="flex flex-col items-center justify-center py-20 text-center px-4 rounded-xl border border-border-primary bg-bg-surface">
-              <Shield size={36} className="text-text-muted mb-3" strokeWidth={1.2} />
-              <p className="text-[14px] font-medium text-text-primary">No Container Selected</p>
-              <p className="mt-1 text-[12px] text-text-muted max-w-md">
-                Select a running Docker container above and click <strong>"Re-evaluate Policies"</strong> to inspect its runtime configuration and security posture.
-              </p>
-            </div>
-          )}
+                )
+              })
+            )}
+          </div>
         </div>
       )}
     </div>
   )
 }
-

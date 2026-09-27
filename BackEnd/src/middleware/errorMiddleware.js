@@ -1,7 +1,15 @@
+import logger from '../utils/logger.js';
+
 /**
  * 404 handler — catches requests to undefined routes.
  */
 export function notFoundHandler(req, res, _next) {
+  logger.warn(`Route not found: ${req.method} ${req.originalUrl}`, {
+    method: req.method,
+    url: req.originalUrl,
+    ip: req.ip || req.headers['x-forwarded-for'],
+  });
+
   res.status(404).json({
     error: 'Not Found',
     message: `Route ${req.method} ${req.originalUrl} does not exist`,
@@ -10,15 +18,21 @@ export function notFoundHandler(req, res, _next) {
 
 /**
  * Centralized error handler — strictly hardened for production.
- * Prevents stack traces, ORM class names, database paths, or internals from leaking.
+ * Logs full structured error context internally while keeping API responses sanitized.
  */
-export function errorHandler(err, _req, res, _next) {
+export function errorHandler(err, req, res, _next) {
   const status = err.status || err.statusCode || 500;
 
-  console.error(`[ERROR] ${err.message}`);
-  if (process.env.NODE_ENV === 'development') {
-    console.error(err.stack);
-  }
+  // Log error with rich context for CloudWatch / Docker log collection
+  logger.error(`HTTP request error: ${err.message}`, {
+    status,
+    method: req.method,
+    url: req.originalUrl,
+    ip: req.ip || req.headers['x-forwarded-for'],
+    errorName: err.name,
+    code: err.code || err.statusCode || undefined,
+    stack: err.stack,
+  });
 
   const isDev = process.env.NODE_ENV === 'development';
 

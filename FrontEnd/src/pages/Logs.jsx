@@ -1,6 +1,16 @@
 import { useState, useEffect, useRef } from 'react'
 import { io } from 'socket.io-client'
-import { ScrollText, Search } from 'lucide-react'
+import {
+  Terminal as TerminalIcon,
+  Search,
+  Play,
+  Pause,
+  Trash2,
+  Copy,
+  Check,
+  Download,
+  Filter,
+} from 'lucide-react'
 import EmptyState from '../components/EmptyState'
 import api from '../services/api'
 
@@ -9,9 +19,9 @@ export default function Logs() {
   const [selectedContainerId, setSelectedContainerId] = useState('')
   const [logs, setLogs] = useState([])
   const [logStatus, setLogStatus] = useState('idle') // idle, connecting, connected, error, disconnected
-  const [logError, setLogError] = useState(null)
   const [search, setSearch] = useState('')
   const [isFollowing, setIsFollowing] = useState(true)
+  const [copied, setCopied] = useState(false)
 
   const socketRef = useRef(null)
   const logsEndRef = useRef(null)
@@ -24,7 +34,6 @@ export default function Logs() {
         const list = res.data || []
         setContainers(list)
         if (list.length > 0 && !selectedContainerId) {
-          // Select first running container by default if available
           const firstRunning = list.find((c) => c.state === 'running') || list[0]
           setSelectedContainerId(firstRunning.id)
         }
@@ -35,11 +44,10 @@ export default function Logs() {
     loadContainers()
   }, [])
 
-  // 2. Manage Socket.IO connection when selected container changes
+  // 2. Manage Socket.IO connection
   useEffect(() => {
     if (!selectedContainerId) return
 
-    // Clean up previous socket if active
     if (socketRef.current) {
       socketRef.current.emit('logs:stop')
       socketRef.current.disconnect()
@@ -47,7 +55,6 @@ export default function Logs() {
     }
 
     setLogs([])
-    setLogError(null)
     setLogStatus('connecting')
 
     const backendUrl = import.meta.env.VITE_API_URL !== undefined
@@ -58,21 +65,15 @@ export default function Logs() {
     socketRef.current = socket
 
     socket.on('connect', () => {
+      setLogStatus('connected')
       socket.emit('logs:start', { containerId: selectedContainerId })
     })
 
     socket.on('logs:status', ({ status }) => setLogStatus(status))
-
-    socket.on('logs:error', ({ message }) => {
-      setLogError(message)
-      setLogStatus('error')
-    })
+    socket.on('logs:error', () => setLogStatus('error'))
 
     socket.on('logs:data', (logEntry) => {
-      setLogs((prev) => {
-        const updated = [...prev, logEntry]
-        return updated.slice(-1000) // Keep max 1000 lines
-      })
+      setLogs((prev) => [...prev.slice(-999), logEntry])
     })
 
     return () => {
@@ -84,7 +85,7 @@ export default function Logs() {
     }
   }, [selectedContainerId])
 
-  // 3. Auto-scroll to bottom if following
+  // 3. Auto-scroll
   useEffect(() => {
     if (isFollowing && logsEndRef.current) {
       logsEndRef.current.scrollIntoView({ behavior: 'smooth' })
@@ -95,122 +96,167 @@ export default function Logs() {
     !search || l.message.toLowerCase().includes(search.toLowerCase())
   )
 
-  const clearLogs = () => setLogs([])
-  const toggleFollow = () => setIsFollowing(!isFollowing)
+  const handleCopyLogs = () => {
+    const raw = filteredLogs.map((l) => `[${l.timestamp}] [${l.stream}] ${l.message}`).join('\n')
+    navigator.clipboard.writeText(raw)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 1500)
+  }
+
+  const selectedContainer = containers.find((c) => c.id === selectedContainerId)
+  const containerName = selectedContainer?.names?.[0]?.replace(/^\//, '') || selectedContainerId.slice(0, 12)
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Live Logs</h1>
-          <p className="mt-1 text-[13px] text-text-secondary">
-            Stream real-time stdout and stderr output from containers via Socket.IO.
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-[#F3F5F7]">Live Stream Terminal</h1>
+            <span className="rounded-md border border-white/5 bg-[#11161F] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#36D6B4]">
+              Demuxed Socket.IO
+            </span>
+          </div>
+          <p className="mt-1 text-[13px] text-[#A7B0BE]">
+            Real-time stdout/stderr log streaming directly from Docker Engine daemon.
           </p>
         </div>
-      </div>
 
-      {/* Container Selector & Filter Controls */}
-      <div className="flex items-center gap-3">
-        <select
-          value={selectedContainerId}
-          onChange={(e) => setSelectedContainerId(e.target.value)}
-          className="h-9 rounded-lg border border-border-primary bg-bg-tertiary px-3 text-[12px] text-text-primary outline-none focus:border-accent-primary/50"
-        >
-          {containers.length === 0 ? (
-            <option value="">No containers found</option>
-          ) : (
-            containers.map((c) => (
+        {/* Workload Target Selector */}
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedContainerId}
+            onChange={(e) => setSelectedContainerId(e.target.value)}
+            className="h-9 rounded-lg border border-white/[0.08] bg-[#11161F] px-3 font-mono text-[12px] text-[#F3F5F7] outline-none transition focus:border-[#36D6B4]/50 focus:bg-[#151B24]"
+          >
+            {containers.map((c) => (
               <option key={c.id} value={c.id}>
-                {c.names?.[0] || c.id.slice(0, 12)} ({c.state})
+                {c.names?.[0]?.replace(/^\//, '') || c.id.slice(0, 12)} ({c.state})
               </option>
-            ))
-          )}
-        </select>
-
-        <div className="relative flex-1">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
-          <input
-            type="text"
-            placeholder="Filter logs by keyword..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-9 w-full rounded-lg border border-border-primary bg-bg-tertiary pl-9 pr-3 text-[12px] text-text-primary placeholder-text-muted outline-none transition focus:border-accent-primary/50"
-          />
+            ))}
+          </select>
         </div>
-
-        <button
-          onClick={clearLogs}
-          className="h-9 rounded-lg border border-border-secondary bg-bg-surface px-3 text-[12px] font-medium text-text-secondary hover:text-text-primary transition"
-        >
-          Clear
-        </button>
-
-        <button
-          onClick={toggleFollow}
-          className={`h-9 rounded-lg border px-3 text-[12px] font-medium transition ${
-            isFollowing
-              ? 'border-accent-primary/50 bg-accent-primary/10 text-accent-primary'
-              : 'border-border-secondary bg-bg-surface text-text-secondary hover:text-text-primary'
-          }`}
-        >
-          {isFollowing ? 'Auto-scroll: ON' : 'Auto-scroll: OFF'}
-        </button>
       </div>
 
-      {/* Terminal Log Viewer */}
-      <div className="rounded-xl border border-border-primary bg-bg-surface overflow-hidden flex flex-col" style={{ height: '620px' }}>
-        <div className="flex items-center justify-between border-b border-border-primary px-4 py-2 text-[11px] bg-bg-tertiary">
-          <div className="flex items-center gap-2">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                logStatus === 'connected'
-                  ? 'bg-status-success'
-                  : logStatus === 'error'
-                  ? 'bg-status-error'
-                  : 'bg-status-warning'
-              }`}
-            />
-            <span className="font-mono text-text-secondary capitalize">{logStatus}</span>
-            {logError && <span className="text-status-error font-mono">— {logError}</span>}
+      {/* Terminal Workstation Frame */}
+      <div className="rounded-xl border border-white/[0.07] bg-[#070A0F] shadow-2xl overflow-hidden flex flex-col h-[calc(100vh-210px)] min-h-[500px]">
+        {/* Terminal Title Bar */}
+        <div className="flex items-center justify-between border-b border-white/[0.07] bg-[#0D1118] px-4 py-2.5">
+          <div className="flex items-center gap-3">
+            {/* Terminal Window Dots */}
+            <div className="flex items-center gap-1.5">
+              <span className="h-2.5 w-2.5 rounded-full bg-[#FF5C70]/70" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#FF9B54]/70" />
+              <span className="h-2.5 w-2.5 rounded-full bg-[#36D6B4]/70" />
+            </div>
+
+            <span className="font-mono text-[11px] text-[#697384]">
+              containerguard &bull; <span className="text-[#A7B0BE]">{containerName}</span> &bull; logs
+            </span>
           </div>
-          <span className="text-text-muted font-mono">{filteredLogs.length} lines displayed</span>
+
+          {/* Controls */}
+          <div className="flex items-center gap-2">
+            {/* Search Input */}
+            <div className="relative">
+              <Search size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#697384]" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Filter output..."
+                className="h-7 w-44 rounded-md border border-white/5 bg-[#151B24] pl-7 pr-2 font-mono text-[11px] text-[#F3F5F7] placeholder-[#697384] outline-none focus:border-[#36D6B4]/40"
+              />
+            </div>
+
+            {/* Connection Status Pill */}
+            <div className="flex items-center gap-1.5 rounded-md border border-white/5 bg-white/[0.02] px-2 py-1 font-mono text-[10px]">
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  logStatus === 'connected' ? 'bg-[#36D6B4] animate-pulse-dot shadow-[0_0_6px_#36D6B4]' : 'bg-[#FF5C70]'
+                }`}
+              />
+              <span className="text-[#A7B0BE] capitalize">{logStatus}</span>
+            </div>
+
+            {/* Auto-Follow Toggle */}
+            <button
+              onClick={() => setIsFollowing(!isFollowing)}
+              className={`flex items-center gap-1 rounded-md border px-2 py-1 font-mono text-[10px] transition ${
+                isFollowing
+                  ? 'border-[#36D6B4]/30 bg-[#36D6B4]/10 text-[#36D6B4]'
+                  : 'border-white/5 text-[#697384] hover:text-[#F3F5F7]'
+              }`}
+            >
+              {isFollowing ? <Pause size={10} /> : <Play size={10} />}
+              <span>{isFollowing ? 'Following' : 'Paused'}</span>
+            </button>
+
+            {/* Copy Logs */}
+            <button
+              onClick={handleCopyLogs}
+              title="Copy visible output"
+              className="flex items-center gap-1 rounded-md border border-white/5 px-2 py-1 font-mono text-[10px] text-[#A7B0BE] hover:bg-white/5 hover:text-[#F3F5F7] transition"
+            >
+              {copied ? <Check size={11} className="text-[#36D6B4]" /> : <Copy size={11} />}
+              <span>{copied ? 'Copied' : 'Copy'}</span>
+            </button>
+
+            {/* Clear Logs */}
+            <button
+              onClick={() => setLogs([])}
+              title="Clear terminal buffer"
+              className="flex h-7 w-7 items-center justify-center rounded-md border border-white/5 text-[#697384] hover:bg-white/5 hover:text-[#FF5C70] transition"
+            >
+              <Trash2 size={12} />
+            </button>
+          </div>
         </div>
 
-        <div
-          className="flex-1 overflow-y-auto bg-[#0a0c10] p-4 font-mono text-[11px] sm:text-[12px] leading-relaxed"
-          onWheel={() => setIsFollowing(false)}
-        >
-          {!selectedContainerId ? (
-            <EmptyState
-              icon={ScrollText}
-              title="No container selected"
-              message="Choose a container from the dropdown to start streaming live stdout/stderr logs."
-            />
-          ) : filteredLogs.length === 0 ? (
-            <div className="text-text-muted text-center py-16">
-              {logs.length === 0 ? 'Connecting to log stream...' : 'No log lines match your keyword filter.'}
+        {/* Terminal Body */}
+        <div className="flex-1 overflow-y-auto p-4 font-mono text-[11px] leading-relaxed select-text space-y-0.5">
+          {filteredLogs.length === 0 ? (
+            <div className="flex h-full flex-col items-center justify-center text-center font-mono text-[12px] text-[#697384]">
+              <TerminalIcon size={32} className="mb-2 text-[#697384]/40" />
+              <span>
+                {logStatus === 'connected'
+                  ? 'Listening to Docker log stream... Waiting for container output.'
+                  : 'Waiting for stream connection...'}
+              </span>
             </div>
           ) : (
-            filteredLogs.map((log, index) => (
-              <div key={index} className="flex gap-3 hover:bg-white/5 px-2 py-0.5 rounded break-all">
-                <span className="text-text-muted shrink-0 select-none">
-                  {log.timestamp ? new Date(log.timestamp).toISOString().split('T')[1].replace('Z', '') : ''}
+            filteredLogs.map((l, idx) => (
+              <div
+                key={idx}
+                className="group flex gap-3 hover:bg-white/[0.03] px-2 py-0.5 rounded transition-colors"
+              >
+                <span className="font-mono text-[#697384] select-none shrink-0 text-[10px] pt-0.5">
+                  {l.timestamp}
                 </span>
                 <span
-                  className={`shrink-0 select-none ${
-                    log.stream === 'stderr' ? 'text-status-error' : 'text-accent-primary/70'
+                  className={`font-mono text-[10px] font-bold uppercase select-none shrink-0 pt-0.5 ${
+                    l.stream === 'stderr' ? 'text-[#FF5C70]' : 'text-[#36D6B4]'
                   }`}
                 >
-                  [{log.stream || 'stdout'}]
+                  [{l.stream}]
                 </span>
-                <span className={log.stream === 'stderr' ? 'text-status-error/90' : 'text-gray-300'}>
-                  {log.message}
+                <span
+                  className={`break-all ${
+                    l.stream === 'stderr' ? 'text-[#FF9B54]' : 'text-[#E4E7ED]'
+                  }`}
+                >
+                  {l.message}
                 </span>
               </div>
             ))
           )}
           <div ref={logsEndRef} />
+        </div>
+
+        {/* Terminal Footer */}
+        <div className="flex items-center justify-between border-t border-white/[0.05] bg-[#0A0E14] px-4 py-1.5 font-mono text-[10px] text-[#697384]">
+          <span>Lines: {filteredLogs.length} / 1000 buffer</span>
+          <span>Target: {selectedContainerId ? selectedContainerId.slice(0, 12) : 'none'}</span>
         </div>
       </div>
     </div>

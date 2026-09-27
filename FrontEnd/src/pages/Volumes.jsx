@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react'
-import { HardDrive, RefreshCw, AlertCircle } from 'lucide-react'
+import {
+  HardDrive,
+  RefreshCw,
+  AlertCircle,
+  Copy,
+  Check,
+  FolderArchive,
+} from 'lucide-react'
 import EmptyState from '../components/EmptyState'
 import api from '../services/api'
 
@@ -7,97 +14,138 @@ export default function Volumes() {
   const [volumes, setVolumes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [copiedName, setCopiedName] = useState(null)
+
+  const fetchVolumes = async () => {
+    try {
+      const res = await api.get('/api/docker/volumes')
+      setVolumes(res.data || [])
+      setError(null)
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to fetch Docker volumes')
+      setVolumes([])
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const fetch = async () => {
-      try {
-        const res = await api.get('/api/docker/volumes')
-        setVolumes(res.data || [])
-        setError(null)
-      } catch (err) {
-        setError(err.response?.data?.message || 'Failed to fetch volumes')
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetch()
+    fetchVolumes()
   }, [])
 
   function formatDate(dateStr) {
     if (!dateStr) return '—'
     return new Date(dateStr).toLocaleDateString('en-US', {
-      month: 'short', day: 'numeric', year: 'numeric'
+      month: 'short', day: 'numeric', year: 'numeric',
     })
+  }
+
+  const handleCopy = (text, name, e) => {
+    e.stopPropagation()
+    navigator.clipboard.writeText(text)
+    setCopiedName(name)
+    setTimeout(() => setCopiedName(null), 1500)
   }
 
   return (
     <div className="space-y-5">
-      <div>
-        <div className="flex items-center gap-3">
-          <h1 className="text-2xl font-bold text-text-primary">Volumes</h1>
-          <span className="rounded-full bg-bg-surface px-2.5 py-0.5 text-[12px] font-semibold text-text-secondary border border-border-primary">
-            {volumes.length} Volume{volumes.length !== 1 ? 's' : ''}
-          </span>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-[#F3F5F7]">Storage Volumes</h1>
+            <span className="rounded-md border border-white/5 bg-[#11161F] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#36D6B4]">
+              {volumes.length} Volumes
+            </span>
+          </div>
+          <p className="mt-1 text-[13px] text-[#A7B0BE]">
+            Persistent storage allocations, host directory bind mounts, and Docker volume lifecycle.
+          </p>
         </div>
-        <p className="mt-1 text-[13px] text-text-secondary">
-          Docker volume inventory and storage allocation tracking.
-        </p>
+
+        <button
+          onClick={fetchVolumes}
+          className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#11161F] px-3 py-1.5 text-[12px] font-medium text-[#A7B0BE] hover:bg-[#151B24] hover:text-[#F3F5F7] transition"
+        >
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
       </div>
 
-      {/* Error banner */}
       {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-status-error/30 bg-status-error/10 px-4 py-2.5 text-[12px] text-status-error">
-          <AlertCircle size={14} />
+        <div className="flex items-center gap-2 rounded-xl border border-[#FF5C70]/30 bg-[#FF5C70]/10 px-4 py-3 text-[12px] text-[#FF5C70]">
+          <AlertCircle size={15} />
           <span>{error}</span>
         </div>
       )}
 
-      <div className="rounded-xl border border-border-primary bg-bg-surface overflow-hidden">
-        <div className="grid grid-cols-[1fr_100px_1fr_100px_100px] gap-3 items-center px-5 py-3 text-[10px] font-semibold uppercase tracking-wider text-text-muted border-b border-border-primary">
+      {/* Volume Inventory Table */}
+      <div className="rounded-xl border border-white/[0.07] bg-[#11161F] overflow-hidden">
+        <div className="grid grid-cols-[1.5fr_100px_2fr_100px_110px] gap-3 px-5 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#697384] border-b border-white/[0.06] bg-[#0D1118]">
           <span>Volume Name</span>
           <span>Driver</span>
-          <span>Mount Point</span>
+          <span>Host Mount Path</span>
           <span>Scope</span>
           <span>Created</span>
         </div>
 
-        {/* Loading */}
-        {loading && (
-          <div className="flex items-center justify-center py-16 text-[13px] text-text-muted">
-            <RefreshCw size={16} className="animate-spin mr-2" />
-            Loading volumes...
-          </div>
-        )}
-
-        {/* Empty */}
-        {!loading && volumes.length === 0 && !error && (
-          <EmptyState
-            icon={HardDrive}
-            title="No volumes discovered"
-            message="No Docker volumes found on this engine."
-          />
-        )}
-
-        {/* Volume rows */}
-        {volumes.map((v) => (
-          <div
-            key={v.name}
-            className="grid grid-cols-[1fr_100px_1fr_100px_100px] gap-3 items-center px-5 py-3 border-b border-border-primary last:border-b-0 text-[12px] hover:bg-bg-hover transition"
-          >
-            <div>
-              <p className="text-text-primary font-medium truncate">{v.name}</p>
+        <div className="divide-y divide-white/[0.04]">
+          {loading && volumes.length === 0 ? (
+            <div className="py-16 text-center font-mono text-[12px] text-[#697384]">
+              Querying Docker storage subsystem...
             </div>
-            <span className="rounded-full bg-bg-tertiary px-2 py-0.5 text-[11px] text-text-secondary text-center">
-              {v.driver}
-            </span>
-            <span className="font-mono text-[11px] text-text-muted truncate">{v.mountpoint}</span>
-            <span className="text-text-secondary capitalize">{v.scope}</span>
-            <span className="text-text-muted">{formatDate(v.createdAt)}</span>
-          </div>
-        ))}
+          ) : volumes.length === 0 ? (
+            <div className="py-16 text-center">
+              <EmptyState
+                icon={HardDrive}
+                title="No volumes discovered"
+                message="No named volumes or host mounts found."
+              />
+            </div>
+          ) : (
+            volumes.map((v) => (
+              <div
+                key={v.name}
+                className="grid grid-cols-[1.5fr_100px_2fr_100px_110px] gap-3 items-center px-5 py-3 text-[12px] hover:bg-[#151B24] transition-colors"
+              >
+                {/* Volume Name */}
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="font-semibold text-[#F3F5F7] truncate" title={v.name}>
+                    {v.name}
+                  </span>
+                  <button
+                    onClick={(e) => handleCopy(v.name, v.name, e)}
+                    title="Copy volume name"
+                    className="text-[#697384] hover:text-[#36D6B4] transition"
+                  >
+                    {copiedName === v.name ? <Check size={10} className="text-[#36D6B4]" /> : <Copy size={10} />}
+                  </button>
+                </div>
 
-        <div className="border-t border-border-primary px-5 py-2.5 text-[11px] text-text-muted">
-          Showing {volumes.length} volumes
+                {/* Driver */}
+                <div>
+                  <span className="rounded-md border border-white/5 bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-[#36D6B4] uppercase">
+                    {v.driver}
+                  </span>
+                </div>
+
+                {/* Mount Path */}
+                <div className="min-w-0 font-mono text-[11px] text-[#A7B0BE] truncate" title={v.mountpoint}>
+                  {v.mountpoint}
+                </div>
+
+                {/* Scope */}
+                <div className="font-mono text-[11px] text-[#697384] capitalize">
+                  {v.scope || 'local'}
+                </div>
+
+                {/* Created */}
+                <div className="font-mono text-[11px] text-[#697384]">
+                  {formatDate(v.createdAt)}
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>

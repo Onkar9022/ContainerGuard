@@ -1,5 +1,6 @@
 import { listContainers, getContainerStats } from '../services/dockerService.js';
 import { persistMetricsBatch } from '../services/metricsService.js';
+import logger from '../utils/logger.js';
 
 // In-memory storage for the latest metrics
 // Key: containerId, Value: Metric Object
@@ -14,12 +15,12 @@ let isCollecting = false;
 
 export function startMetricsWorker() {
   if (workerIntervalId !== null) {
-    console.warn('[MetricsWorker] Worker is already running.');
+    logger.warn('[MetricsWorker] Worker is already running.');
     return;
   }
 
   const intervalMs = parseInt(process.env.METRICS_COLLECTION_INTERVAL_MS || '5000', 10);
-  console.log(`[MetricsWorker] Started (Interval: ${intervalMs}ms)`);
+  logger.info('[MetricsWorker] Started', { intervalMs });
 
   workerIntervalId = setInterval(collectMetrics, intervalMs);
   
@@ -31,7 +32,7 @@ export function stopMetricsWorker() {
   if (workerIntervalId !== null) {
     clearInterval(workerIntervalId);
     workerIntervalId = null;
-    console.log('[MetricsWorker] Stopped');
+    logger.info('[MetricsWorker] Stopped');
   }
 }
 
@@ -61,7 +62,10 @@ async function collectMetrics() {
         currentMetrics.set(container.id, stats);
         successCount++;
       } catch (err) {
-        console.warn(`[MetricsWorker] Failed to collect metrics for ${container.id.slice(0, 12)}: ${err.message}`);
+        logger.warn(`[MetricsWorker] Failed to collect metrics for container`, {
+          containerId: container.id.slice(0, 12),
+          error: err.message,
+        });
       }
     }
 
@@ -76,10 +80,16 @@ async function collectMetrics() {
       }
     }
 
-    console.log(`[MetricsWorker] Collected and persisted metrics for ${successCount} running containers`);
+    logger.debug(`[MetricsWorker] Collected and persisted metrics`, {
+      successCount,
+      runningContainers: runningContainers.length,
+    });
 
   } catch (err) {
-    console.error(`[MetricsWorker] Failed to run collection cycle: ${err.message}`);
+    logger.error(`[MetricsWorker] Failed to run collection cycle`, {
+      error: err.message,
+      stack: err.stack,
+    });
   } finally {
     isCollecting = false;
   }

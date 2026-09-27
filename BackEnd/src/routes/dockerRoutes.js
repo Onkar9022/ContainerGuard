@@ -10,6 +10,7 @@ import {
   listVolumes,
   pingDocker,
 } from '../services/dockerService.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
 
@@ -33,6 +34,15 @@ function dockerRoute(fn) {
       const message = isConnectionError
         ? 'Docker Engine unavailable — is the Docker socket mounted and the daemon running?'
         : err.message || 'Docker operation failed';
+
+      logger.error(`Docker integration error: ${message}`, {
+        context: 'DockerAPI',
+        isConnectionError,
+        statusCode: status,
+        url: req.originalUrl,
+        method: req.method,
+        error: err.message,
+      });
 
       res.status(status).json({ success: false, message });
     }

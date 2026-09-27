@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import { getDockerClient } from './dockerService.js';
 import { persistScan } from './securityPersistenceService.js';
+import logger from '../utils/logger.js';
 
 // Concurrency lock to prevent duplicate concurrent scans for the same image
 const activeScans = new Set();
@@ -203,7 +204,7 @@ export async function scanLocalImage(imageInput) {
 
   // 4. Mark scan in-flight
   activeScans.add(image);
-  console.log(`[Security] Starting Trivy scan: ${image}`);
+  logger.info(`Starting Trivy scan for image: ${image}`, { context: 'Security', image });
 
   try {
     const rawJson = await new Promise((resolve, reject) => {
@@ -247,7 +248,7 @@ export async function scanLocalImage(imageInput) {
     try {
       parsedReport = JSON.parse(rawJson);
     } catch (parseErr) {
-      console.error(`[Security] Failed to parse Trivy JSON output:`, parseErr.message);
+      logger.error('Failed to parse Trivy JSON output', { context: 'Security', image, error: parseErr.message });
       const err = new Error('Failed to parse Trivy vulnerability scan output.');
       err.statusCode = 502;
       throw err;
@@ -259,7 +260,12 @@ export async function scanLocalImage(imageInput) {
     // Persist to database atomically
     const persistedScan = await persistScan(image, imageId, normalizedData, 'SUCCESS');
     
-    console.log(`[Security] Scan completed and persisted: ${image} (${normalizedData.totalVulnerabilities} vulnerabilities found)`);
+    logger.info(`Scan completed and persisted: ${image}`, {
+      context: 'Security',
+      image,
+      totalVulnerabilities: normalizedData.totalVulnerabilities,
+      scanId: persistedScan.id
+    });
 
     // Return in the exact expected format, adding the scanId
     return {
@@ -271,7 +277,7 @@ export async function scanLocalImage(imageInput) {
       vulnerabilities: persistedScan.vulnerabilities, // Use the DB records which have IDs
     };
   } catch (err) {
-    console.error(`[Security] Scan failed for ${image}:`, err.message);
+    logger.error(`Scan failed for image: ${image}`, { context: 'Security', image, error: err.message });
     throw err;
   } finally {
     // 5. Always release scan lock

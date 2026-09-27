@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Server, Cpu, MemoryStick, HardDrive, RefreshCw, AlertCircle, BarChart3 } from 'lucide-react'
+import {
+  Server,
+  Cpu,
+  Database,
+  Container,
+  RefreshCw,
+  AlertCircle,
+  HardDrive,
+  Layers,
+  Terminal,
+} from 'lucide-react'
 import StatCard from '../components/StatCard'
 import api from '../services/api'
 
@@ -8,21 +17,21 @@ export default function Hosts() {
   const [info, setInfo] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const navigate = useNavigate()
+
+  const fetchHostInfo = async () => {
+    try {
+      const res = await api.get('/api/docker/info')
+      setInfo(res.data)
+      setError(null)
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to fetch Docker Engine host info')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    const fetch = async () => {
-      try {
-        const res = await api.get('/api/docker/info')
-        setInfo(res.data)
-        setError(null)
-      } catch (err) {
-        setError(err.response?.data?.message || 'Failed to fetch Docker Engine info')
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetch()
+    fetchHostInfo()
   }, [])
 
   function formatBytes(bytes) {
@@ -35,90 +44,124 @@ export default function Hosts() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Hosts</h1>
-        <p className="mt-1 text-[13px] text-text-secondary">
-          Infrastructure host metrics and Docker Engine runtime configuration.
-        </p>
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-[#F3F5F7]">Host Infrastructure</h1>
+            <span className="rounded-md border border-white/5 bg-[#11161F] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#36D6B4]">
+              EC2 &bull; Docker Engine
+            </span>
+          </div>
+          <p className="mt-1 text-[13px] text-[#A7B0BE]">
+            Hardware topology, virtualization layer, and Docker daemon daemon runtime specifications.
+          </p>
+        </div>
+
+        <button
+          onClick={fetchHostInfo}
+          className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#11161F] px-3 py-1.5 text-[12px] font-medium text-[#A7B0BE] hover:bg-[#151B24] hover:text-[#F3F5F7] transition"
+        >
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
       </div>
 
       {/* Error banner */}
       {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-status-error/30 bg-status-error/10 px-4 py-2.5 text-[12px] text-status-error">
-          <AlertCircle size={14} />
+        <div className="flex items-center gap-2 rounded-xl border border-[#FF5C70]/30 bg-[#FF5C70]/10 px-4 py-3 text-[12px] text-[#FF5C70]">
+          <AlertCircle size={15} />
           <span>{error}</span>
         </div>
       )}
 
-      {/* Loading */}
-      {loading && (
-        <div className="flex items-center justify-center py-16 text-[13px] text-text-muted">
-          <RefreshCw size={16} className="animate-spin mr-2" />
-          Connecting to Docker Engine...
+      {loading && !info ? (
+        <div className="flex h-64 items-center justify-center font-mono text-[13px] text-[#697384]">
+          <RefreshCw size={16} className="animate-spin mr-2 text-[#36D6B4]" />
+          Inspecting host hardware and Docker socket...
         </div>
-      )}
-
-      {info && (
+      ) : info && (
         <>
-          {/* Host info stat cards */}
-          <div className="grid grid-cols-4 gap-4">
-            <StatCard icon={Server} label="OS" value={info.osType || '—'} subValue={info.os || '—'} />
-            <StatCard icon={Cpu} label="CPU Cores" value={info.cpus ?? '—'} subValue={`Architecture: ${info.architecture || '—'}`} />
-            <StatCard icon={MemoryStick} label="Total Memory" value={formatBytes(info.totalMemory)} subValue={`Kernel: ${info.kernelVersion || '—'}`} />
-            <StatCard icon={HardDrive} label="Containers" value={info.containersTotal ?? 0} subValue={`${info.containersRunning ?? 0} running · ${info.containersStopped ?? 0} stopped`} />
+          {/* Top Hardware KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatCard
+              icon={Server}
+              label="HOST OS"
+              value={info.osType || 'Linux'}
+              subValue={<span className="truncate block font-mono text-[11px] text-[#A7B0BE]">{info.os || '—'}</span>}
+              badge="KERNEL 6.x"
+              badgeType="neutral"
+            />
+
+            <StatCard
+              icon={Cpu}
+              label="CPU ALLOCATION"
+              value={`${info.cpus ?? 2} Cores`}
+              subValue={<span className="font-mono text-[11px] text-[#A7B0BE]">Arch: {info.architecture || 'x86_64'}</span>}
+              badge="SMP"
+              badgeType="teal"
+            />
+
+            <StatCard
+              icon={Database}
+              label="TOTAL RAM"
+              value={formatBytes(info.totalMemory)}
+              subValue={<span className="font-mono text-[11px] text-[#A7B0BE]">Kernel: {info.kernelVersion?.slice(0, 18) || '—'}</span>}
+              badge="PHYSICAL"
+              badgeType="neutral"
+            />
+
+            <StatCard
+              icon={Container}
+              label="FLEET UNITS"
+              value={info.containersTotal ?? 0}
+              subValue={
+                <span className="font-mono text-[11px] text-[#36D6B4]">
+                  {info.containersRunning ?? 0} running &bull; {info.containersStopped ?? 0} stopped
+                </span>
+              }
+              badge={`${info.imagesTotal ?? 0} IMAGES`}
+              badgeType="teal"
+            />
           </div>
 
-          {/* Docker Engine info */}
-          <div className="rounded-xl border border-border-primary bg-bg-surface p-5">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-[14px] font-semibold text-text-primary">Docker Engine Runtime</h2>
-              <span className="flex items-center gap-1.5 text-[11px] text-accent-primary">
-                <span className="h-2 w-2 rounded-full bg-accent-primary animate-pulse" />
-                Connected
-              </span>
+          {/* Docker Engine Runtime 2-Column Key/Value Specification Matrix */}
+          <div className="rounded-xl border border-white/[0.07] bg-[#11161F] p-5">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3 mb-4">
+              <div className="flex items-center gap-2">
+                <Terminal size={15} className="text-[#36D6B4]" />
+                <h2 className="text-[14px] font-semibold text-[#F3F5F7]">Docker Engine Runtime Specification</h2>
+              </div>
+              <div className="flex items-center gap-1.5 font-mono text-[11px] text-[#36D6B4]">
+                <span className="h-1.5 w-1.5 rounded-full bg-[#36D6B4] shadow-[0_0_6px_#36D6B4]" />
+                Socket Connected
+              </div>
             </div>
-            <div className="grid grid-cols-2 gap-4">
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3 font-mono text-[12px]">
               {[
-                { label: 'Docker Version', value: info.dockerVersion },
-                { label: 'API Version', value: info.apiVersion },
+                { label: 'Docker Engine Version', value: info.dockerVersion },
+                { label: 'Docker API Version', value: info.apiVersion },
                 { label: 'Storage Driver', value: info.storageDriver },
-                { label: 'Runtimes', value: info.runtimes?.join(', ') || '—' },
-                { label: 'OS Type', value: info.osType },
-                { label: 'Architecture', value: info.architecture },
-                { label: 'Total Containers', value: info.containersTotal },
-                { label: 'Total Images', value: info.imagesTotal },
-                { label: 'Running Containers', value: info.containersRunning },
-                { label: 'Stopped Containers', value: info.containersStopped },
-                { label: 'Paused Containers', value: info.containersPaused },
+                { label: 'Configured Runtimes', value: info.runtimes?.join(', ') || 'runc' },
+                { label: 'Operating System', value: info.os },
+                { label: 'System Architecture', value: info.architecture },
                 { label: 'Kernel Version', value: info.kernelVersion },
+                { label: 'Daemon Server Time', value: info.serverTime },
+                { label: 'Total Tracked Containers', value: info.containersTotal },
+                { label: 'Running Workloads', value: info.containersRunning },
+                { label: 'Stopped Workloads', value: info.containersStopped },
+                { label: 'Paused Workloads', value: info.containersPaused },
               ].map((item) => (
-                <div key={item.label} className="flex items-center justify-between border-b border-border-primary py-2">
-                  <span className="text-[12px] text-text-secondary">{item.label}</span>
-                  <span className="font-mono text-[12px] text-text-primary">{item.value ?? '—'}</span>
+                <div
+                  key={item.label}
+                  className="flex items-center justify-between border-b border-white/[0.04] py-2"
+                >
+                  <span className="text-[#697384]">{item.label}</span>
+                  <span className="font-semibold text-[#F3F5F7] text-right truncate max-w-xs">{item.value ?? '—'}</span>
                 </div>
               ))}
             </div>
-          </div>
-
-          {/* Real Metrics Link Card */}
-          <div className="rounded-xl border border-border-primary bg-bg-surface p-5 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-lg bg-accent-primary/10 text-accent-primary">
-                <BarChart3 size={20} />
-              </div>
-              <div>
-                <h3 className="text-[13px] font-semibold text-text-primary">Container Resource Telemetry</h3>
-                <p className="text-[12px] text-text-muted">
-                  View real-time CPU, RAM, and network throughput charts persisted across running containers.
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={() => navigate('/metrics')}
-              className="rounded-lg bg-accent-primary/15 px-4 py-2 text-[12px] font-semibold text-accent-primary hover:bg-accent-primary/25 transition"
-            >
-              Open Metrics Dashboard →
-            </button>
           </div>
         </>
       )}

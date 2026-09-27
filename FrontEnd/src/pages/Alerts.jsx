@@ -13,7 +13,11 @@ import {
   ShieldAlert,
   Sliders,
   Check,
+  Activity,
+  Zap,
 } from 'lucide-react'
+import SeverityBadge from '../components/SeverityBadge'
+import EmptyState from '../components/EmptyState'
 import api from '../services/api'
 
 export default function Alerts() {
@@ -30,9 +34,9 @@ export default function Alerts() {
   })
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState(null)
-  const [statusFilter, setStatusFilter] = useState('ALL') // ALL, OPEN, ACKNOWLEDGED, RESOLVED
-  const [severityFilter, setSeverityFilter] = useState('ALL') // ALL, CRITICAL, WARNING, NOTICE
-  const [sourceFilter, setSourceFilter] = useState('ALL') // ALL, METRICS, DOCKER, SECURITY, POLICY
+  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [severityFilter, setSeverityFilter] = useState('ALL')
+  const [sourceFilter, setSourceFilter] = useState('ALL')
   const [expandedId, setExpandedId] = useState(null)
 
   // Fetch summary and alert records
@@ -56,8 +60,6 @@ export default function Alerts() {
       if (summaryRes.status === 'fulfilled' && summaryRes.value?.data) {
         setSummary(summaryRes.value.data)
       }
-    } catch (err) {
-      console.error('Failed to fetch alerts:', err)
     } finally {
       setLoading(false)
     }
@@ -76,8 +78,6 @@ export default function Alerts() {
     try {
       await api.patch(`/api/alerts/${id}/acknowledge`)
       await loadAlerts()
-    } catch (err) {
-      console.error('Failed to acknowledge alert:', err)
     } finally {
       setActionLoading(null)
     }
@@ -90,147 +90,82 @@ export default function Alerts() {
     try {
       await api.patch(`/api/alerts/${id}/resolve`, { reason: 'Manually resolved via Alert Center' })
       await loadAlerts()
-    } catch (err) {
-      console.error('Failed to resolve alert:', err)
     } finally {
       setActionLoading(null)
     }
   }
 
-  function getSeverityBadge(severity) {
-    switch (severity) {
-      case 'CRITICAL':
-        return (
-          <span className="inline-flex items-center gap-1 rounded bg-severity-critical/15 px-2 py-0.5 text-[10px] font-bold text-severity-critical border border-severity-critical/30">
-            <XCircle size={11} /> CRITICAL
-          </span>
-        )
-      case 'WARNING':
-        return (
-          <span className="inline-flex items-center gap-1 rounded bg-severity-high/15 px-2 py-0.5 text-[10px] font-bold text-severity-high border border-severity-high/30">
-            <AlertTriangle size={11} /> WARNING
-          </span>
-        )
-      case 'NOTICE':
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 rounded bg-chart-blue/15 px-2 py-0.5 text-[10px] font-bold text-chart-blue border border-chart-blue/30">
-            <Bell size={11} /> NOTICE
-          </span>
-        )
-    }
-  }
-
-  function getStatusBadge(status) {
-    switch (status) {
-      case 'OPEN':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-status-danger/15 px-2.5 py-0.5 text-[10px] font-bold text-status-danger border border-status-danger/30">
-            <span className="h-1.5 w-1.5 rounded-full bg-status-danger animate-pulse" />
-            OPEN
-          </span>
-        )
-      case 'ACKNOWLEDGED':
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-chart-blue/15 px-2.5 py-0.5 text-[10px] font-bold text-chart-blue border border-chart-blue/30">
-            <Check size={11} />
-            ACKNOWLEDGED
-          </span>
-        )
-      case 'RESOLVED':
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 rounded-full bg-status-success/15 px-2.5 py-0.5 text-[10px] font-bold text-status-success border border-status-success/30">
-            <CheckCircle2 size={11} />
-            RESOLVED
-          </span>
-        )
-    }
-  }
-
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <p className="text-[10px] font-semibold uppercase tracking-widest text-text-muted">
-            Continuous Operational & Security Observability
-          </p>
-          <div className="flex items-center gap-3 mt-1">
-            <h1 className="text-2xl font-bold text-text-primary">Alert Center</h1>
-            {summary.open > 0 && (
-              <span className="rounded px-2.5 py-0.5 text-[11px] font-bold text-white bg-severity-critical">
-                {summary.open} Active Open
-              </span>
-            )}
+          <div className="flex items-center gap-3">
+            <h1 className="text-2xl font-bold tracking-tight text-[#F3F5F7]">Alert Operations Center</h1>
+            <span className="rounded-md border border-white/5 bg-[#11161F] px-2 py-0.5 font-mono text-[11px] font-semibold text-[#FF5C70]">
+              {summary.open} Open
+            </span>
           </div>
-          <p className="mt-1 text-[13px] text-text-secondary">
-            Deterministic alert management evaluating CPU, memory, container health, restart loops, Trivy CVEs, and security policies.
+          <p className="mt-1 text-[13px] text-[#A7B0BE]">
+            Automated anomaly detection, cgroup threshold violations, and security policy incident response.
           </p>
         </div>
 
         <button
-          onClick={() => { setLoading(true); loadAlerts(); }}
-          disabled={loading}
-          className="flex items-center gap-1.5 rounded-lg border border-border-secondary bg-bg-surface px-4 py-2 text-[12px] font-medium text-text-secondary transition hover:text-text-primary hover:bg-bg-hover disabled:opacity-50"
+          onClick={loadAlerts}
+          className="flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#11161F] px-3 py-1.5 text-[12px] font-medium text-[#A7B0BE] hover:bg-[#151B24] hover:text-[#F3F5F7] transition"
         >
-          <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
-          <span>Sync Alerts</span>
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          Sync Alerts
         </button>
       </div>
 
-      {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-3.5 flex flex-col justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-severity-critical">Critical</p>
-          <p className="mt-2 text-2xl font-extrabold text-severity-critical">{summary.critical}</p>
-          <p className="mt-1 text-[10px] text-text-muted">Active un-resolved</p>
+      {/* KPI Severity & Lifecycle Summary Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="rounded-xl border border-[#FF5C70]/20 bg-[#11161F] p-3">
+          <span className="font-mono text-[10px] text-[#697384] uppercase">CRITICAL</span>
+          <div className="mt-1 text-2xl font-bold font-mono text-[#FF5C70]">{summary.critical}</div>
         </div>
 
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-3.5 flex flex-col justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-severity-high">Warning</p>
-          <p className="mt-2 text-2xl font-extrabold text-severity-high">{summary.warning}</p>
-          <p className="mt-1 text-[10px] text-text-muted">Active un-resolved</p>
+        <div className="rounded-xl border border-[#FF9B54]/20 bg-[#11161F] p-3">
+          <span className="font-mono text-[10px] text-[#697384] uppercase">WARNING</span>
+          <div className="mt-1 text-2xl font-bold font-mono text-[#FF9B54]">{summary.warning}</div>
         </div>
 
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-3.5 flex flex-col justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-chart-blue">Notice</p>
-          <p className="mt-2 text-2xl font-extrabold text-chart-blue">{summary.notice}</p>
-          <p className="mt-1 text-[10px] text-text-muted">Active un-resolved</p>
+        <div className="rounded-xl border border-white/[0.07] bg-[#11161F] p-3">
+          <span className="font-mono text-[10px] text-[#697384] uppercase">NOTICE</span>
+          <div className="mt-1 text-2xl font-bold font-mono text-[#A7B0BE]">{summary.notice}</div>
         </div>
 
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-3.5 flex flex-col justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-status-danger">Open</p>
-          <p className="mt-2 text-2xl font-extrabold text-status-danger">{summary.open}</p>
-          <p className="mt-1 text-[10px] text-text-muted">Requires action</p>
+        <div className="rounded-xl border border-[#36D6B4]/20 bg-[#11161F] p-3">
+          <span className="font-mono text-[10px] text-[#697384] uppercase">OPEN</span>
+          <div className="mt-1 text-2xl font-bold font-mono text-[#36D6B4]">{summary.open}</div>
         </div>
 
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-3.5 flex flex-col justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-chart-blue">Acknowledged</p>
-          <p className="mt-2 text-2xl font-extrabold text-chart-blue">{summary.acknowledged}</p>
-          <p className="mt-1 text-[10px] text-text-muted">Under investigation</p>
+        <div className="rounded-xl border border-[#F2C94C]/20 bg-[#11161F] p-3">
+          <span className="font-mono text-[10px] text-[#697384] uppercase">ACKNOWLEDGED</span>
+          <div className="mt-1 text-2xl font-bold font-mono text-[#F2C94C]">{summary.acknowledged}</div>
         </div>
 
-        <div className="rounded-xl border border-border-primary bg-bg-surface p-3.5 flex flex-col justify-between">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-status-success">Resolved</p>
-          <p className="mt-2 text-2xl font-extrabold text-status-success">{summary.resolved}</p>
-          <p className="mt-1 text-[10px] text-text-muted">Historical audit</p>
+        <div className="rounded-xl border border-[#35D399]/20 bg-[#11161F] p-3">
+          <span className="font-mono text-[10px] text-[#697384] uppercase">RESOLVED</span>
+          <div className="mt-1 text-2xl font-bold font-mono text-[#35D399]">{summary.resolved}</div>
         </div>
       </div>
 
       {/* Filter Toolbar */}
-      <div className="rounded-xl border border-border-primary bg-bg-surface p-4 flex flex-wrap items-center justify-between gap-4">
-        {/* Status Filters */}
-        <div className="flex items-center gap-1.5 overflow-x-auto">
-          <span className="text-[11px] font-semibold text-text-muted mr-1.5">Status:</span>
+      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.07] bg-[#11161F] p-3">
+        {/* Status Filter */}
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-[11px] text-[#697384]">STATUS:</span>
           {['ALL', 'OPEN', 'ACKNOWLEDGED', 'RESOLVED'].map((st) => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
-              className={`rounded-lg px-3 py-1.5 text-[12px] font-medium transition ${
+              className={`rounded-md px-2.5 py-1 font-mono text-[10px] font-semibold transition ${
                 statusFilter === st
-                  ? 'bg-accent-primary text-white font-semibold'
-                  : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+                  ? 'bg-[#151B24] text-[#36D6B4] shadow-sm'
+                  : 'text-[#A7B0BE] hover:text-[#F3F5F7]'
               }`}
             >
               {st}
@@ -238,154 +173,162 @@ export default function Alerts() {
           ))}
         </div>
 
-        {/* Severity & Source Selectors */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-semibold text-text-muted">Severity:</span>
-            <select
-              value={severityFilter}
-              onChange={(e) => setSeverityFilter(e.target.value)}
-              className="rounded-lg border border-border-secondary bg-bg-primary px-2.5 py-1 text-[12px] text-text-primary focus:border-accent-primary focus:outline-none"
-            >
-              <option value="ALL">All Severities</option>
-              <option value="CRITICAL">Critical</option>
-              <option value="WARNING">Warning</option>
-              <option value="NOTICE">Notice</option>
-            </select>
-          </div>
+        <span className="hidden sm:inline text-white/10">|</span>
 
-          <div className="flex items-center gap-1.5">
-            <span className="text-[11px] font-semibold text-text-muted">Source:</span>
-            <select
-              value={sourceFilter}
-              onChange={(e) => setSourceFilter(e.target.value)}
-              className="rounded-lg border border-border-secondary bg-bg-primary px-2.5 py-1 text-[12px] text-text-primary focus:border-accent-primary focus:outline-none"
+        {/* Severity Filter */}
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-[11px] text-[#697384]">SEVERITY:</span>
+          {['ALL', 'CRITICAL', 'WARNING'].map((sev) => (
+            <button
+              key={sev}
+              onClick={() => setSeverityFilter(sev)}
+              className={`rounded-md px-2.5 py-1 font-mono text-[10px] font-semibold transition ${
+                severityFilter === sev
+                  ? 'bg-[#151B24] text-[#36D6B4] shadow-sm'
+                  : 'text-[#A7B0BE] hover:text-[#F3F5F7]'
+              }`}
             >
-              <option value="ALL">All Sources</option>
-              <option value="METRICS">METRICS (AL001, AL002)</option>
-              <option value="DOCKER">DOCKER (AL003, AL004)</option>
-              <option value="SECURITY">SECURITY (AL005)</option>
-              <option value="POLICY">POLICY (AL006)</option>
-            </select>
-          </div>
+              {sev}
+            </button>
+          ))}
+        </div>
+
+        <span className="hidden sm:inline text-white/10">|</span>
+
+        {/* Source Filter */}
+        <div className="flex items-center gap-1.5">
+          <span className="font-mono text-[11px] text-[#697384]">SOURCE:</span>
+          {['ALL', 'METRICS', 'DOCKER', 'SECURITY', 'POLICY'].map((src) => (
+            <button
+              key={src}
+              onClick={() => setSourceFilter(src)}
+              className={`rounded-md px-2.5 py-1 font-mono text-[10px] font-semibold transition ${
+                sourceFilter === src
+                  ? 'bg-[#151B24] text-[#36D6B4] shadow-sm'
+                  : 'text-[#A7B0BE] hover:text-[#F3F5F7]'
+              }`}
+            >
+              {src}
+            </button>
+          ))}
         </div>
       </div>
 
-      {/* Alerts Table / List */}
-      <div className="rounded-xl border border-border-primary bg-bg-surface overflow-hidden shadow-sm">
-        <div className="border-b border-border-primary px-5 py-3 flex items-center justify-between text-[11px] font-semibold text-text-muted uppercase tracking-wider">
-          <span>Active & Historical Alerts</span>
-          <span>Showing {alerts.length} Records</span>
-        </div>
-
-        {alerts.length === 0 && !loading && (
-          <div className="flex flex-col items-center justify-center py-20 text-center px-4">
-            <CheckCircle2 size={36} className="text-status-success mb-3" strokeWidth={1.2} />
-            <p className="text-[14px] font-medium text-text-primary">No Alerts Matching Criteria</p>
-            <p className="mt-1 text-[12px] text-text-muted max-w-md">
-              All monitored container operational metrics, health checks, vulnerability scans, and security policies are currently within configured thresholds.
-            </p>
+      {/* Alert Feed Timeline */}
+      <div className="space-y-2.5">
+        {alerts.length === 0 ? (
+          <div className="py-20 text-center rounded-xl border border-white/[0.07] bg-[#11161F]">
+            <EmptyState
+              icon={Bell}
+              title="No alerts match current filters"
+              message="All monitored container systems are operating within safe cgroup and security thresholds."
+            />
           </div>
-        )}
-
-        <div className="divide-y divide-border-primary">
-          {alerts.map((alert) => {
+        ) : (
+          alerts.map((alert) => {
             const isExpanded = expandedId === alert.id
-            const isProcessing = actionLoading === alert.id
+            const isResolved = alert.status === 'RESOLVED'
+            const isAck = alert.status === 'ACKNOWLEDGED'
 
             return (
               <div
                 key={alert.id}
-                onClick={() => setExpandedId(isExpanded ? null : alert.id)}
-                className="p-4 hover:bg-bg-hover/60 transition cursor-pointer"
+                className="rounded-xl border border-white/[0.07] bg-[#11161F] overflow-hidden transition-all hover:border-white/[0.12]"
               >
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                  {/* Left Column: Code, Severity, Title, Container */}
-                  <div className="flex items-start gap-3 min-w-0 flex-1">
-                    <button className="mt-1 text-text-muted hover:text-text-primary transition shrink-0">
-                      {isExpanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
-                    </button>
+                <div
+                  onClick={() => setExpandedId(isExpanded ? null : alert.id)}
+                  className="flex flex-col sm:flex-row sm:items-center justify-between p-4 cursor-pointer gap-3 hover:bg-[#151B24] transition-colors"
+                >
+                  <div className="flex items-start sm:items-center gap-3 min-w-0">
+                    <div>
+                      <SeverityBadge severity={alert.severity} size="sm" />
+                    </div>
 
-                    <div className="space-y-1 min-w-0 flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        {getSeverityBadge(alert.severity)}
-                        <span className="font-mono font-bold text-[11px] bg-bg-primary px-2 py-0.5 rounded border border-border-secondary text-text-primary">
-                          {alert.alertCode}
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[11px] font-semibold text-[#36D6B4]">
+                          [{alert.alertCode}]
                         </span>
-                        <span className="text-[11px] font-mono text-accent-primary bg-accent-primary/10 px-2 py-0.5 rounded">
+                        <h3 className="font-semibold text-[#F3F5F7] text-[13px] truncate">
+                          {alert.title}
+                        </h3>
+                        <span className="rounded bg-white/5 px-1.5 py-0.2 font-mono text-[9px] text-[#697384]">
                           {alert.source}
                         </span>
-                        {getStatusBadge(alert.status)}
                       </div>
-
-                      <h3 className="text-[14px] font-bold text-text-primary leading-tight pt-1">
-                        {alert.title}
-                      </h3>
-
-                      <p className="text-[12px] text-text-secondary leading-snug">
+                      <p className="mt-0.5 text-[12px] text-[#A7B0BE] truncate">
                         {alert.message}
                       </p>
-
-                      <div className="flex flex-wrap items-center gap-4 text-[11px] text-text-muted pt-1">
-                        <span className="flex items-center gap-1 font-mono">
-                          <Box size={12} /> {alert.containerName} ({alert.containerId.slice(0, 12)})
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock size={12} /> First: {new Date(alert.firstSeenAt).toLocaleTimeString()}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Clock size={12} /> Last: {new Date(alert.lastSeenAt).toLocaleTimeString()}
-                        </span>
-                        {alert.resolvedAt && (
-                          <span className="text-status-success font-medium flex items-center gap-1">
-                            <CheckCircle2 size={12} /> Resolved: {new Date(alert.resolvedAt).toLocaleTimeString()}
-                          </span>
-                        )}
-                      </div>
                     </div>
                   </div>
 
-                  {/* Right Column: Action Buttons */}
-                  <div className="flex items-center gap-2 self-end lg:self-center shrink-0">
-                    {alert.status === 'OPEN' && (
-                      <button
-                        onClick={(e) => handleAcknowledge(alert.id, e)}
-                        disabled={isProcessing}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-chart-blue/40 bg-chart-blue/10 text-chart-blue text-[11px] font-semibold transition hover:bg-chart-blue/20 disabled:opacity-50"
-                      >
-                        <Check size={12} />
-                        <span>Acknowledge</span>
-                      </button>
-                    )}
+                  {/* Actions & Meta */}
+                  <div className="flex items-center justify-between sm:justify-end gap-3 shrink-0">
+                    <span className="font-mono text-[11px] text-[#697384]">
+                      {new Date(alert.lastSeenAt || alert.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
 
-                    {alert.status !== 'RESOLVED' && (
-                      <button
-                        onClick={(e) => handleResolve(alert.id, e)}
-                        disabled={isProcessing}
-                        className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-status-success/40 bg-status-success/10 text-status-success text-[11px] font-semibold transition hover:bg-status-success/20 disabled:opacity-50"
-                      >
-                        <CheckCircle2 size={12} />
-                        <span>Resolve</span>
-                      </button>
-                    )}
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      {!isResolved && !isAck && (
+                        <button
+                          onClick={(e) => handleAcknowledge(alert.id, e)}
+                          disabled={actionLoading === alert.id}
+                          className="rounded-md border border-white/10 bg-white/5 px-2.5 py-1 font-mono text-[10px] text-[#A7B0BE] hover:text-[#F3F5F7] transition"
+                        >
+                          Ack
+                        </button>
+                      )}
+
+                      {!isResolved && (
+                        <button
+                          onClick={(e) => handleResolve(alert.id, e)}
+                          disabled={actionLoading === alert.id}
+                          className="rounded-md border border-[#35D399]/30 bg-[#35D399]/10 px-2.5 py-1 font-mono text-[10px] font-semibold text-[#35D399] hover:bg-[#35D399]/20 transition"
+                        >
+                          Resolve
+                        </button>
+                      )}
+
+                      {isResolved && (
+                        <span className="rounded-md bg-[#35D399]/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-[#35D399]">
+                          RESOLVED
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="text-[#697384]">
+                      {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </div>
                   </div>
                 </div>
 
-                {/* Expanded Details / Metadata Drawer */}
-                {isExpanded && alert.metadata && (
-                  <div className="mt-3.5 pt-3 border-t border-border-secondary/60">
-                    <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wider mb-1.5">
-                      Diagnostic Metadata:
-                    </p>
-                    <pre className="p-3 rounded-lg bg-bg-primary border border-border-secondary text-[11px] font-mono text-text-secondary overflow-x-auto">
-                      {JSON.stringify(alert.metadata, null, 2)}
-                    </pre>
+                {/* Expandable Diagnostic Evidence */}
+                {isExpanded && (
+                  <div className="border-t border-white/[0.05] bg-[#0D1118] p-4 text-[12px] font-mono space-y-2 animate-fade-in">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-[#697384]">
+                      <div>Container Target: <span className="text-[#F3F5F7]">{alert.containerName}</span> ({alert.containerId?.slice(0, 12)})</div>
+                      <div>First Detected: <span className="text-[#A7B0BE]">{new Date(alert.firstSeenAt).toLocaleString()}</span></div>
+                      <div>Last Triggered: <span className="text-[#A7B0BE]">{new Date(alert.lastSeenAt).toLocaleString()}</span></div>
+                      {alert.resolvedAt && (
+                        <div>Resolved At: <span className="text-[#35D399]">{new Date(alert.resolvedAt).toLocaleString()}</span></div>
+                      )}
+                    </div>
+
+                    {alert.metadata && (
+                      <div className="mt-2">
+                        <span className="text-[#697384] text-[10px] uppercase block mb-1">Diagnostic Telemetry Payload:</span>
+                        <pre className="rounded bg-black/40 p-2.5 text-[11px] text-[#36D6B4] overflow-x-auto border border-white/5">
+                          {JSON.stringify(alert.metadata, null, 2)}
+                        </pre>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )
-          })}
-        </div>
+          })
+        )}
       </div>
     </div>
   )

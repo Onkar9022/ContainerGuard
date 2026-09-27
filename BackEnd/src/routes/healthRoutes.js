@@ -13,10 +13,13 @@ router.get('/health', async (_req, res) => {
     dbStatus = 'disconnected';
   }
 
-  res.json({
-    status: 'ok',
+  const isHealthy = dbStatus === 'connected';
+
+  res.status(isHealthy ? 200 : 503).json({
+    status: isHealthy ? 'ok' : 'degraded',
     service: 'containerguard-api',
     version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
     database: dbStatus,
     uptime: Math.floor(process.uptime()),
     timestamp: new Date().toISOString(),
