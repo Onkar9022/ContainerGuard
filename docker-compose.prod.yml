@@ -13,8 +13,8 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-containerguard}
 
     volumes:
-      # Isolated named production volume — preserves data across container restarts
-      - containerguard-prod-postgres-data:/var/lib/postgresql/data
+      # Named production volume — preserves data across container restarts
+      - postgres-data:/var/lib/postgresql/data
 
     # SECURITY: PostgreSQL is NOT exposed to the host or public internet
     # Accessible internally only via containerguard-prod-network as postgres:5432
@@ -158,5 +158,5 @@ networks:
 # Volumes
 # =============================================================================
 volumes:
-  containerguard-prod-postgres-data:
-    name: containerguard-prod-postgres-data
+  postgres-data:
+    name: ${POSTGRES_VOLUME_NAME:-containerguard-prod-postgres-data}
