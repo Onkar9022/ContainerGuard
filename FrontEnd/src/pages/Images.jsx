@@ -122,92 +122,120 @@ export default function Images() {
         </div>
       </div>
 
+      {error && (
+        <div className="flex items-center gap-2.5 rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-[13px] text-red-400">
+          <AlertCircle size={16} className="shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
       {/* Image Inventory Table */}
       <div className="rounded-xl border border-white/[0.07] bg-[#11161F] overflow-hidden">
-        <div className="grid grid-cols-[1.5fr_100px_140px_100px_110px_120px] gap-3 px-5 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#697384] border-b border-white/[0.06] bg-[#0D1118]">
-          <span>Repository</span>
-          <span>Tag</span>
-          <span>Image ID</span>
-          <span>Size</span>
-          <span>Created</span>
-          <span className="text-right">Security Scan</span>
-        </div>
-
-        <div className="divide-y divide-white/[0.04]">
-          {filtered.length === 0 ? (
-            <div className="py-16 text-center">
-              <EmptyState
-                icon={Box}
-                title="No Docker images found"
-                message={
-                  search
-                    ? `No images match your search query "${search}".`
-                    : 'No images found in local Docker store.'
-                }
-              />
+        <div className="overflow-x-auto">
+          <div className="min-w-[880px]">
+            <div className="grid grid-cols-[minmax(200px,1.6fr)_140px_150px_90px_110px_130px] gap-4 px-5 py-2.5 font-mono text-[10px] font-semibold uppercase tracking-wider text-[#697384] border-b border-white/[0.06] bg-[#0D1118]">
+              <span>Repository</span>
+              <span>Tag</span>
+              <span>Image ID</span>
+              <span>Size</span>
+              <span>Created</span>
+              <span className="text-right">Security Scan</span>
             </div>
-          ) : (
-            filtered.map((img) => {
-              const { repo, tag } = parseRepoTag(img.repoTags)
-              const shortId = img.id.replace('sha256:', '').slice(0, 12)
-              const fullTag = repo !== '<untagged>' ? `${repo}:${tag}` : img.id
 
-              return (
-                <div
-                  key={img.id}
-                  className="grid grid-cols-[1.5fr_100px_140px_100px_110px_120px] gap-3 items-center px-5 py-3 text-[12px] hover:bg-[#151B24] transition-colors"
-                >
-                  {/* Repository */}
-                  <div className="min-w-0">
-                    <p className="font-semibold text-[#F3F5F7] truncate" title={repo}>
-                      {repo}
-                    </p>
-                  </div>
-
-                  {/* Tag */}
-                  <div>
-                    <span className="inline-block rounded-md border border-white/5 bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-[#36D6B4]">
-                      {tag}
-                    </span>
-                  </div>
-
-                  {/* Image ID */}
-                  <div className="flex items-center gap-1.5 font-mono text-[11px] text-[#697384]">
-                    <span>{shortId}</span>
-                    <button
-                      onClick={(e) => handleCopy(img.id, img.id, e)}
-                      title="Copy full Image ID"
-                      className="text-[#697384] hover:text-[#36D6B4] transition"
-                    >
-                      {copiedId === img.id ? <Check size={10} className="text-[#36D6B4]" /> : <Copy size={10} />}
-                    </button>
-                  </div>
-
-                  {/* Size */}
-                  <div className="font-mono text-[11px] text-[#A7B0BE]">
-                    {formatSize(img.size)}
-                  </div>
-
-                  {/* Created */}
-                  <div className="font-mono text-[11px] text-[#697384]">
-                    {formatCreated(img.created)}
-                  </div>
-
-                  {/* Scan Button Trigger */}
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => navigate('/security', { state: { image: fullTag } })}
-                      className="flex items-center gap-1.5 rounded-lg border border-[#36D6B4]/25 bg-[#36D6B4]/10 px-2.5 py-1 text-[11px] font-medium text-[#36D6B4] hover:bg-[#36D6B4]/20 transition"
-                      title="Scan image in Security Center"
-                    >
-                      <Shield size={12} />
-                      <span>Scan Image</span>
-                    </button>
-                  </div>
+            <div className="divide-y divide-white/[0.04]">
+              {filtered.length === 0 ? (
+                <div className="py-16 text-center">
+                  <EmptyState
+                    icon={Box}
+                    title="No Docker images found"
+                    message={
+                      search
+                        ? `No images match your search query "${search}".`
+                        : 'No images found in local Docker store.'
+                    }
+                  />
                 </div>
-              )
-            })
-          )}
+              ) : (
+                filtered.map((img) => {
+                  const { repo, tag } = parseRepoTag(img.repoTags)
+                  const shortId = img.id.replace('sha256:', '').slice(0, 12)
+                  const fullTag = repo !== '<untagged>' ? `${repo}:${tag}` : img.id
+                  const isNone = tag === '<none>'
+
+                  return (
+                    <div
+                      key={img.id}
+                      className="grid grid-cols-[minmax(200px,1.6fr)_140px_150px_90px_110px_130px] gap-4 items-center px-5 py-3 text-[12px] hover:bg-[#151B24] transition-colors"
+                    >
+                      {/* Repository */}
+                      <div className="min-w-0 pr-2">
+                        <p className="font-semibold text-[#F3F5F7] truncate" title={repo}>
+                          {repo}
+                        </p>
+                      </div>
+
+                      {/* Tag */}
+                      <div className="min-w-0 flex items-center">
+                        <span
+                          title={tag}
+                          className={`inline-flex items-center max-w-[130px] rounded-md border px-2 py-0.5 font-mono text-[11px] font-medium ${
+                            isNone
+                              ? 'border-white/10 bg-white/[0.04] text-[#697384]'
+                              : 'border-[#36D6B4]/25 bg-[#36D6B4]/10 text-[#36D6B4]'
+                          }`}
+                        >
+                          <span className="truncate">{tag}</span>
+                        </span>
+                      </div>
+
+                      {/* Image ID */}
+                      <div className="min-w-0 flex items-center gap-1.5 font-mono text-[11px]">
+                        <code
+                          title={img.id}
+                          className="rounded-md border border-white/[0.08] bg-black/40 px-2 py-0.5 text-[#A7B0BE] tracking-tight select-all"
+                        >
+                          {shortId}
+                        </code>
+                        <button
+                          onClick={(e) => handleCopy(img.id, img.id, e)}
+                          title="Copy full Image ID"
+                          className="rounded p-1 text-[#697384] hover:bg-white/[0.06] hover:text-[#36D6B4] transition shrink-0"
+                        >
+                          {copiedId === img.id ? (
+                            <Check size={11} className="text-[#36D6B4]" />
+                          ) : (
+                            <Copy size={11} />
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Size */}
+                      <div className="font-mono text-[11px] text-[#A7B0BE] whitespace-nowrap">
+                        {formatSize(img.size)}
+                      </div>
+
+                      {/* Created */}
+                      <div className="font-mono text-[11px] text-[#697384] whitespace-nowrap">
+                        {formatCreated(img.created)}
+                      </div>
+
+                      {/* Scan Button Trigger */}
+                      <div className="flex justify-end">
+                        <button
+                          onClick={() => navigate('/security', { state: { image: fullTag } })}
+                          className="flex items-center gap-1.5 rounded-lg border border-[#36D6B4]/25 bg-[#36D6B4]/10 px-2.5 py-1 text-[11px] font-medium text-[#36D6B4] hover:bg-[#36D6B4]/20 transition shrink-0"
+                          title="Scan image in Security Center"
+                        >
+                          <Shield size={12} />
+                          <span>Scan Image</span>
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
         </div>
       </div>
     </div>
